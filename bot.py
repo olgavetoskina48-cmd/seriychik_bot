@@ -2,12 +2,26 @@ import telebot
 import sqlite3
 import threading
 import time
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 TOKEN = "8961168833:AAEtlADb8Tyng1LmMbD7d_0Q7AeNkqny_W8"
 bot = telebot.TeleBot(TOKEN)
 
 ADMINS = []
 user_choice = {}
+
+# --- ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ RENDER ---
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'Bot is running!')
+
+def run_server():
+    port = int(os.environ.get('PORT', 10000))
+    server = HTTPServer(('0.0.0.0', port), Handler)
+    server.serve_forever()
 
 # --- БАЗА ДАННЫХ ---
 def init_db():
@@ -220,7 +234,7 @@ def dress(message):
     update_pet(user_id, 'одежда', options[new_idx])
     bot.send_message(message.chat.id, f"Теперь на питомце: {options[new_idx]}")
 
-# --- СООБЩЕНИЯ (рост за счёт них) ---
+# --- СООБЩЕНИЯ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -255,5 +269,7 @@ thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-print("✅ Бот с возрастом и стадиями по сообщениям запущен!")
+# --- ЗАПУСК СЕРВЕРА И БОТА ---
+threading.Thread(target=run_server).start()
+print("✅ Бот с портом запущен!")
 bot.polling()
