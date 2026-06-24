@@ -11,7 +11,7 @@ bot = telebot.TeleBot(TOKEN)
 ADMINS = []
 user_choice = {}
 
-# --- ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ RENDER ---
+# --- ПОРТ ---
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -79,13 +79,13 @@ def update_pet(user_id, field, value):
     db.commit()
 
 def get_stage(total_messages):
-    if total_messages < 100:
+    if total_messages < 50:
         return "в пути 🌱"
-    elif total_messages <= 250:
+    elif total_messages <= 150:
         return "яйцо 🥚"
-    elif total_messages <= 500:
+    elif total_messages <= 400:
         return "малыш 🐣"
-    elif total_messages <= 1000:
+    elif total_messages <= 800:
         return "подросток 🧒"
     else:
         return "взрослый 🧑"
@@ -155,7 +155,7 @@ def set_pet_type(message):
         return
     create_pet(user_id, pet_type)
     user_choice.pop(user_id, None)
-    bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Чтобы он вылупился, нужно 100 сообщений.")
+    bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Чтобы он вылупился, нужно 50 сообщений.")
 
 @bot.message_handler(commands=['feed'])
 def feed(message):
@@ -269,7 +269,7 @@ thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-# --- ЗАПУСК СЕРВЕРА И БОТА ---
+# --- ЗАПУСК ---
 threading.Thread(target=run_server).start()
-print("✅ Бот с портом запущен!")
+print("✅ Бот с яйцом от 50 сообщений запущен!")
 bot.polling()
