@@ -2,25 +2,11 @@ import telebot
 import sqlite3
 import threading
 import time
-import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
 
 TOKEN = "8310099970:AAGpML1jCzhMpSL4U_GeFkUltJDs1hv_F6s"
 bot = telebot.TeleBot(TOKEN)
 
 ADMINS = []
-
-# --- ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ RENDER ---
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'Bot is running!')
-
-def run_server():
-    port = int(os.environ.get('PORT', 10000))
-    server = HTTPServer(('0.0.0.0', port), Handler)
-    server.serve_forever()
 
 # --- БАЗА ДАННЫХ ---
 def init_db():
@@ -39,7 +25,7 @@ def init_db():
             xp INTEGER DEFAULT 0,
             level INTEGER DEFAULT 1,
             total_messages INTEGER DEFAULT 0,
-            stage TEXT DEFAULT 'яйцо',
+            stage TEXT DEFAULT 'ещё не вылупилось 🌱',
             pet_type TEXT DEFAULT 'кошка'
         )
     ''')
@@ -239,7 +225,7 @@ def dress(message):
     update_pet(user_id, 'одежда', options[new_idx])
     bot.send_message(message.chat.id, f"Теперь на питомце: {options[new_idx]}")
 
-# --- XP И СООБЩЕНИЯ ---
+# --- XP ЗА СООБЩЕНИЯ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -254,7 +240,7 @@ def handle_all_messages(message):
     xp_gain = 3 if user_id in ADMINS else 5
     add_xp(user_id, xp_gain)
 
-# --- ДНИ ---
+# --- ДНИ (ФОН) ---
 def update_days():
     while True:
         time.sleep(86400)
@@ -274,7 +260,5 @@ thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-# --- ЗАПУСК СЕРВЕРА И БОТА ---
-threading.Thread(target=run_server).start()
-print("✅ Бот с портом запущен!")
+print("✅ Бот запущен!")
 bot.polling()
