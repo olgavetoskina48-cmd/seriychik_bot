@@ -2,11 +2,24 @@ import telebot
 import sqlite3
 import threading
 import time
+import os
+from flask import Flask
+from threading import Thread
 
-TOKEN = "8961168833:AAHX1WQPNPFyaeHjmBY3HY2imTT5ifOGKeE"  # ВСТАВЬ СВОЙ
+TOKEN = "8310099970:AAGpML1jCzhMpSL4U_GeFkUltJDs1hv_F6s"  # ВСТАВЬ СВОЙ
 bot = telebot.TeleBot(TOKEN)
 
-ADMINS = []  # сюда ID админов
+ADMINS = []  # ID админов
+
+# --- ПОРТ ДЛЯ RENDER (чтобы не ругался) ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Бот Серийчик работает!"
+
+def keep_alive():
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
 
 # --- БАЗА ДАННЫХ ---
 def init_db():
@@ -212,5 +225,8 @@ thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-print("✅ Бот с гигиеной, энергией и дисциплиной запущен!")
+# --- ЗАПУСК ПОРТА И БОТА ---
+Thread(target=keep_alive).start()
+
+print("✅ Бот с портом запущен!")
 bot.polling()
