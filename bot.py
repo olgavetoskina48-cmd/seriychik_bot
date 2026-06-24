@@ -6,14 +6,13 @@ import os
 from flask import Flask
 from threading import Thread
 
-TOKEN = "8310099970:AAGpML1jCzhMpSL4U_GeFkUltJDs1hv_F6s"  # ВСТАВЬ СВОЙ
+TOKEN = "8310099970:AAGpML1jCzhMpSL4U_GeFkUltJDs1hv_F6s"
 bot = telebot.TeleBot(TOKEN)
 
-ADMINS = []  # ID админов
+ADMINS = []
 
-# --- ПОРТ ДЛЯ RENDER (чтобы не ругался) ---
+# --- ПОРТ ---
 app = Flask(__name__)
-
 @app.route('/')
 def home():
     return "Бот Серийчик работает!"
@@ -36,7 +35,10 @@ def init_db():
             дни INTEGER DEFAULT 0,
             одежда TEXT DEFAULT 'без одежды',
             xp INTEGER DEFAULT 0,
-            level INTEGER DEFAULT 1
+            level INTEGER DEFAULT 1,
+            total_messages INTEGER DEFAULT 0,
+            stage TEXT DEFAULT 'яйцо',
+            pet_type TEXT DEFAULT 'кошка'
         )
     ''')
     conn.commit()
@@ -58,13 +60,16 @@ def get_pet(user_id):
             'дни': row[6],
             'одежда': row[7],
             'xp': row[8],
-            'level': row[9]
+            'level': row[9],
+            'total_messages': row[10],
+            'stage': row[11],
+            'pet_type': row[12]
         }
     return None
 
-def create_pet(user_id):
+def create_pet(user_id, pet_type):
     cursor = db.cursor()
-    cursor.execute('INSERT INTO pets (user_id) VALUES (?)', (user_id,))
+    cursor.execute('INSERT INTO pets (user_id, pet_type) VALUES (?, ?)', (user_id, pet_type))
     db.commit()
 
 def update_pet(user_id, field, value):
@@ -89,6 +94,26 @@ def add_xp(user_id, amount):
     cursor.execute('UPDATE pets SET xp = ?, level = ? WHERE user_id = ?', (xp, level, user_id))
     db.commit()
 
+def get_stage(total_messages):
+    if 50 <= total_messages <= 100:
+        return "яйцо 🥚"
+    elif 101 <= total_messages <= 500:
+        return "малыш 🐣"
+    elif 501 <= total_messages <= 1000:
+        return "подросток 🧒"
+    elif total_messages > 1000:
+        return "взрослый 🧑"
+    else:
+        return "ещё не вылупилось 🌱"
+
+def check_stage_upgrade(user_id, pet):
+    old_stage = pet['stage']
+    new_stage = get_stage(pet['total_messages'])
+    if new_stage != old_stage:
+        update_pet(user_id, 'stage', new_stage)
+        if new_stage != "ещё не вылупилось 🌱":
+            bot.send_message(user_id, f"🌟 Твой Серийчик вырос! Теперь он {new_stage}!")
+
 def get_state(pet):
     if pet['голод'] < 20:
         return "голодный 🍂"
@@ -102,7 +127,15 @@ def get_state(pet):
         return "счастливый 🌟"
     return "спокойный 🙂"
 
-# --- КОМАНДЫ ---
+# --- ВЫБОР ПИТОМЦА ---
+pet_emojis = {
+    "кошка": "🐱",
+    "лиса": "🦊",
+    "собака": "🐶",
+    "енот": "🦝",
+    "хомяк": "🐹"
+}
+
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик.\n/newpet — завести питомца\n/feed, /play, /wash, /sleep, /train — ухаживать\n/status — состояние\n/dress — переодеть")
@@ -113,9 +146,20 @@ def new_pet(message):
     if get_pet(user_id):
         bot.send_message(message.chat.id, "У тебя уже есть питомец!")
         return
-    create_pet(user_id)
-    bot.send_message(message.chat.id, "🎉 Ты завёл Серийчика! Ухаживай за ним:\n/feed, /play, /wash, /sleep, /train")
+    markup = telebot.types.InlineKeyboardMarkup()
+    for name, emoji in pet_emojis.items():
+        markup.add(telebot.types.InlineKeyboardButton(f"{emoji} {name.capitalize()}", callback_data=f"pet_{name}"))
+    bot.send_message(message.chat.id, "🥚 Выбери, кто вылупится из яйца:", reply_markup=markup)
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith('pet_'))
+def choose_pet(call):
+    user_id = call.from_user.id
+    pet_type = call.data.split('_')[1]
+    create_pet(user_id, pet_type)
+    bot.edit_message_text(f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Пиши сообщения, чтобы он рос.", call.message.chat.id, call.message.message_id)
+    bot.answer_callback_query(call.id)
+
+# --- КОМАНДЫ УХОДА ---
 @bot.message_handler(commands=['feed'])
 def feed(message):
     user_id = message.from_user.id
@@ -176,7 +220,8 @@ def status(message):
         return
     state = get_state(pet)
     xp_needed = pet['level'] * 50
-    text = f"📊 Серийчик ({state}):\n🍖 Голод: {pet['голод']}\n😊 Счастье: {pet['счастье']}\n🧼 Гигиена: {pet['гигиена']}\n⚡ Энергия: {pet['энергия']}\n📏 Дисциплина: {pet['дисциплина']}\n📅 Дней: {pet['дни']}\n👕 Одежда: {pet['одежда']}\n⭐ Уровень: {pet['level']}\n📈 XP: {pet['xp']}/{xp_needed}"
+    emoji = pet_emojis.get(pet['pet_type'], '🐾')
+    text = f"📊 {emoji} Серийчик ({state})\n{pet['stage']}\n\n🍖 Голод: {pet['голод']}\n😊 Счастье: {pet['счастье']}\n🧼 Гигиена: {pet['гигиена']}\n⚡ Энергия: {pet['энергия']}\n📏 Дисциплина: {pet['дисциплина']}\n📅 Дней: {pet['дни']}\n👕 Одежда: {pet['одежда']}\n⭐ Уровень: {pet['level']}\n📈 XP: {pet['xp']}/{xp_needed}\n💬 Сообщений: {pet['total_messages']}"
     bot.send_message(message.chat.id, text)
 
 @bot.message_handler(commands=['dress'])
@@ -193,7 +238,7 @@ def dress(message):
     update_pet(user_id, 'одежда', options[new_idx])
     bot.send_message(message.chat.id, f"Теперь на питомце: {options[new_idx]}")
 
-# --- XP ЗА СООБЩЕНИЯ ---
+# --- XP И СООБЩЕНИЯ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -202,10 +247,13 @@ def handle_all_messages(message):
     pet = get_pet(user_id)
     if not pet:
         return
+    new_total = pet['total_messages'] + 1
+    update_pet(user_id, 'total_messages', new_total)
+    check_stage_upgrade(user_id, pet)
     xp_gain = 3 if user_id in ADMINS else 5
     add_xp(user_id, xp_gain)
 
-# --- ФОНОВЫЙ СЧЁТЧИК ДНЕЙ ---
+# --- ДНИ ---
 def update_days():
     while True:
         time.sleep(86400)
@@ -225,8 +273,7 @@ thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-# --- ЗАПУСК ПОРТА И БОТА ---
+# --- ЗАПУСК ---
 Thread(target=keep_alive).start()
-
-print("✅ Бот с портом запущен!")
+print("✅ Бот с выбором питомца и новой эволюцией запущен!")
 bot.polling()
