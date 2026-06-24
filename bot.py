@@ -7,6 +7,7 @@ TOKEN = "8961168833:AAHX1WQPNPFyaeHjmBY3HY2imTT5ifOGKeE"
 bot = telebot.TeleBot(TOKEN)
 
 ADMINS = []
+user_choice = {}  # словарь для хранения состояния выбора питомца
 
 # --- БАЗА ДАННЫХ ---
 def init_db():
@@ -134,19 +135,30 @@ def new_pet(message):
     if get_pet(user_id):
         bot.send_message(message.chat.id, "У тебя уже есть питомец!")
         return
+    user_choice[user_id] = True
     bot.send_message(message.chat.id, "🥚 Напиши тип питомца: кошка, лиса, собака, енот, хомяк")
     bot.register_next_step_handler(message, set_pet_type)
 
 def set_pet_type(message):
     user_id = message.from_user.id
+    if user_id not in user_choice:
+        return
+
+    if message.text.startswith('/'):
+        user_choice.pop(user_id, None)
+        return
+
     pet_type = message.text.lower()
     if pet_type not in pet_emojis:
         bot.send_message(message.chat.id, "❌ Неверный тип. Напиши: кошка, лиса, собака, енот, хомяк")
         bot.register_next_step_handler(message, set_pet_type)
         return
+
     create_pet(user_id, pet_type)
+    user_choice.pop(user_id, None)
     bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Пиши сообщения, чтобы он рос.")
 
+# --- ОСТАЛЬНЫЕ КОМАНДЫ ---
 @bot.message_handler(commands=['feed'])
 def feed(message):
     user_id = message.from_user.id
@@ -225,12 +237,14 @@ def dress(message):
     update_pet(user_id, 'одежда', options[new_idx])
     bot.send_message(message.chat.id, f"Теперь на питомце: {options[new_idx]}")
 
-# --- XP ЗА СООБЩЕНИЯ ---
+# --- XP И СООБЩЕНИЯ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
     if message.text and message.text.startswith('/'):
         return
+    if user_id in user_choice:
+        return  # игнорируем сообщения, пока идёт выбор питомца
     pet = get_pet(user_id)
     if not pet:
         return
@@ -240,7 +254,7 @@ def handle_all_messages(message):
     xp_gain = 3 if user_id in ADMINS else 5
     add_xp(user_id, xp_gain)
 
-# --- ДНИ (ФОН) ---
+# --- ДНИ ---
 def update_days():
     while True:
         time.sleep(86400)
@@ -260,5 +274,5 @@ thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-print("✅ Бот запущен!")
+print("✅ Бот запущен без спама!")
 bot.polling()
