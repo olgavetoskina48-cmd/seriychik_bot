@@ -3,7 +3,7 @@ import sqlite3
 import threading
 import time
 
-TOKEN = "8961168833:AAHX1WQPNPFyaeHjmBY3HY2imTT5ifOGKeE"
+TOKEN = "8961168833:AAEtlADb8Tyng1LmMbD7d_0Q7AeNkqny_W8"
 bot = telebot.TeleBot(TOKEN)
 
 ADMINS = []
