@@ -3,13 +3,12 @@ import sqlite3
 import threading
 import time
 
-TOKEN = "8961168833:AAHX1WQPNPFyaeHjmBY3HY2imTT5ifOGKeE"  # ВСТАВЬ СВОЙ ТОКЕН
+TOKEN = "8961168833:AAHX1WQPNPFyaeHjmBY3HY2imTT5ifOGKeE"  # ВСТАВЬ СВОЙ
 bot = telebot.TeleBot(TOKEN)
 
-# Список админов (Telegram ID)
-ADMINS = []  # Добавь сюда ID админов, например [123456789, 987654321]
+ADMINS = []  # сюда ID админов
 
-# --- БАЗА ДАННЫХ (SQLite) ---
+# --- БАЗА ДАННЫХ ---
 def init_db():
     conn = sqlite3.connect('pets.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -18,6 +17,9 @@ def init_db():
             user_id INTEGER PRIMARY KEY,
             голод INTEGER DEFAULT 50,
             счастье INTEGER DEFAULT 50,
+            гигиена INTEGER DEFAULT 50,
+            энергия INTEGER DEFAULT 50,
+            дисциплина INTEGER DEFAULT 50,
             дни INTEGER DEFAULT 0,
             одежда TEXT DEFAULT 'без одежды',
             xp INTEGER DEFAULT 0,
@@ -37,10 +39,13 @@ def get_pet(user_id):
         return {
             'голод': row[1],
             'счастье': row[2],
-            'дни': row[3],
-            'одежда': row[4],
-            'xp': row[5],
-            'level': row[6]
+            'гигиена': row[3],
+            'энергия': row[4],
+            'дисциплина': row[5],
+            'дни': row[6],
+            'одежда': row[7],
+            'xp': row[8],
+            'level': row[9]
         }
     return None
 
@@ -71,10 +76,23 @@ def add_xp(user_id, amount):
     cursor.execute('UPDATE pets SET xp = ?, level = ? WHERE user_id = ?', (xp, level, user_id))
     db.commit()
 
+def get_state(pet):
+    if pet['голод'] < 20:
+        return "голодный 🍂"
+    if pet['гигиена'] < 20:
+        return "грязный 💧"
+    if pet['энергия'] < 20:
+        return "уставший 😴"
+    if pet['счастье'] < 20:
+        return "грустный 🌧️"
+    if pet['голод'] > 80 and pet['счастье'] > 80 and pet['гигиена'] > 80 and pet['энергия'] > 80:
+        return "счастливый 🌟"
+    return "спокойный 🙂"
+
 # --- КОМАНДЫ ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "Привет! Я бот с питомцами 🐾\nКоманды: /newpet, /feed, /play, /status, /dress")
+    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик.\n/newpet — завести питомца\n/feed, /play, /wash, /sleep, /train — ухаживать\n/status — состояние\n/dress — переодеть")
 
 @bot.message_handler(commands=['newpet'])
 def new_pet(message):
@@ -83,39 +101,69 @@ def new_pet(message):
         bot.send_message(message.chat.id, "У тебя уже есть питомец!")
         return
     create_pet(user_id)
-    bot.send_message(message.chat.id, "Ты завёл питомца! 🎉\n/feed - покормить\n/play - поиграть\n/status - состояние\n/dress - переодеть")
+    bot.send_message(message.chat.id, "🎉 Ты завёл Серийчика! Ухаживай за ним:\n/feed, /play, /wash, /sleep, /train")
 
 @bot.message_handler(commands=['feed'])
 def feed(message):
     user_id = message.from_user.id
     pet = get_pet(user_id)
     if not pet:
-        bot.send_message(message.chat.id, "Сначала заведи питомца командой /newpet")
+        bot.send_message(message.chat.id, "Сначала /newpet")
         return
-    new_val = min(100, pet['голод'] + 20)
-    update_pet(user_id, 'голод', new_val)
-    bot.send_message(message.chat.id, f"🍖 Покормлен! Голод +20")
+    update_pet(user_id, 'голод', min(100, pet['голод'] + 20))
+    bot.send_message(message.chat.id, "🍖 Покормлен! Голод +20")
 
 @bot.message_handler(commands=['play'])
 def play(message):
     user_id = message.from_user.id
     pet = get_pet(user_id)
     if not pet:
-        bot.send_message(message.chat.id, "Сначала заведи питомца командой /newpet")
+        bot.send_message(message.chat.id, "Сначала /newpet")
         return
-    new_val = min(100, pet['счастье'] + 15)
-    update_pet(user_id, 'счастье', new_val)
-    bot.send_message(message.chat.id, f"🎾 Поиграл! Счастье +15")
+    update_pet(user_id, 'счастье', min(100, pet['счастье'] + 15))
+    update_pet(user_id, 'энергия', max(0, pet['энергия'] - 10))
+    bot.send_message(message.chat.id, "🎾 Поиграл! Счастье +15, Энергия -10")
+
+@bot.message_handler(commands=['wash'])
+def wash(message):
+    user_id = message.from_user.id
+    pet = get_pet(user_id)
+    if not pet:
+        bot.send_message(message.chat.id, "Сначала /newpet")
+        return
+    update_pet(user_id, 'гигиена', min(100, pet['гигиена'] + 25))
+    bot.send_message(message.chat.id, "🧼 Помыт! Гигиена +25")
+
+@bot.message_handler(commands=['sleep'])
+def sleep(message):
+    user_id = message.from_user.id
+    pet = get_pet(user_id)
+    if not pet:
+        bot.send_message(message.chat.id, "Сначала /newpet")
+        return
+    update_pet(user_id, 'энергия', min(100, pet['энергия'] + 30))
+    bot.send_message(message.chat.id, "😴 Поспал! Энергия +30")
+
+@bot.message_handler(commands=['train'])
+def train(message):
+    user_id = message.from_user.id
+    pet = get_pet(user_id)
+    if not pet:
+        bot.send_message(message.chat.id, "Сначала /newpet")
+        return
+    update_pet(user_id, 'дисциплина', min(100, pet['дисциплина'] + 15))
+    bot.send_message(message.chat.id, "🏋️ Тренировка! Дисциплина +15")
 
 @bot.message_handler(commands=['status'])
 def status(message):
     user_id = message.from_user.id
     pet = get_pet(user_id)
     if not pet:
-        bot.send_message(message.chat.id, "Нет питомца. Заведи через /newpet")
+        bot.send_message(message.chat.id, "Нет питомца. /newpet")
         return
+    state = get_state(pet)
     xp_needed = pet['level'] * 50
-    text = f"📊 Серийчик:\n🍖 Голод: {pet['голод']}\n😊 Счастье: {pet['счастье']}\n📅 Дней: {pet['дни']}\n👕 Одежда: {pet['одежда']}\n⭐ Уровень: {pet['level']}\n📈 XP: {pet['xp']}/{xp_needed}"
+    text = f"📊 Серийчик ({state}):\n🍖 Голод: {pet['голод']}\n😊 Счастье: {pet['счастье']}\n🧼 Гигиена: {pet['гигиена']}\n⚡ Энергия: {pet['энергия']}\n📏 Дисциплина: {pet['дисциплина']}\n📅 Дней: {pet['дни']}\n👕 Одежда: {pet['одежда']}\n⭐ Уровень: {pet['level']}\n📈 XP: {pet['xp']}/{xp_needed}"
     bot.send_message(message.chat.id, text)
 
 @bot.message_handler(commands=['dress'])
@@ -123,42 +171,46 @@ def dress(message):
     user_id = message.from_user.id
     pet = get_pet(user_id)
     if not pet:
-        bot.send_message(message.chat.id, "Сначала заведи питомца командой /newpet")
+        bot.send_message(message.chat.id, "Сначала /newpet")
         return
-    options = ["без одежды", "шапка 🧢", "шарф 🧣", "очки 🕶️"]
+    options = ["без одежды", "шапка 🧢", "шарф 🧣", "очки 🕶️", "плащ 🧥"]
     current = pet['одежда']
     idx = options.index(current) if current in options else 0
     new_idx = (idx + 1) % len(options)
     update_pet(user_id, 'одежда', options[new_idx])
     bot.send_message(message.chat.id, f"Теперь на питомце: {options[new_idx]}")
 
-# --- ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ (XP за общение) ---
+# --- XP ЗА СООБЩЕНИЯ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
-    # Игнорируем команды
     if message.text and message.text.startswith('/'):
         return
     pet = get_pet(user_id)
     if not pet:
         return
-    # Начисляем XP
-    if user_id in ADMINS:
-        add_xp(user_id, 3)
-    else:
-        add_xp(user_id, 5)
+    xp_gain = 3 if user_id in ADMINS else 5
+    add_xp(user_id, xp_gain)
 
 # --- ФОНОВЫЙ СЧЁТЧИК ДНЕЙ ---
 def update_days():
     while True:
         time.sleep(86400)
         cursor = db.cursor()
-        cursor.execute('UPDATE pets SET дни = дни + 1')
+        cursor.execute('''
+            UPDATE pets SET
+                дни = дни + 1,
+                голод = MAX(0, голод - 5),
+                счастье = MAX(0, счастье - 3),
+                гигиена = MAX(0, гигиена - 5),
+                энергия = MAX(0, энергия - 4),
+                дисциплина = MAX(0, дисциплина - 2)
+        ''')
         db.commit()
 
 thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-print("✅ Бот запущен с SQLite и уровнями!")
+print("✅ Бот с гигиеной, энергией и дисциплиной запущен!")
 bot.polling()
