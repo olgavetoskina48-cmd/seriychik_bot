@@ -3,22 +3,24 @@ import sqlite3
 import threading
 import time
 import os
-from flask import Flask
-from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 TOKEN = "8310099970:AAGpML1jCzhMpSL4U_GeFkUltJDs1hv_F6s"
 bot = telebot.TeleBot(TOKEN)
 
 ADMINS = []
 
-# --- ПОРТ ---
-app = Flask(__name__)
-@app.route('/')
-def home():
-    return "Бот Серийчик работает!"
+# --- ПРОСТОЙ HTTP-СЕРВЕР ДЛЯ RENDER ---
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'Bot is running!')
 
-def keep_alive():
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+def run_server():
+    port = int(os.environ.get('PORT', 10000))
+    server = HTTPServer(('0.0.0.0', port), Handler)
+    server.serve_forever()
 
 # --- БАЗА ДАННЫХ ---
 def init_db():
@@ -95,16 +97,16 @@ def add_xp(user_id, amount):
     db.commit()
 
 def get_stage(total_messages):
-    if 50 <= total_messages <= 100:
-        return "яйцо 🥚"
-    elif 101 <= total_messages <= 500:
-        return "малыш 🐣"
-    elif 501 <= total_messages <= 1000:
-        return "подросток 🧒"
-    elif total_messages > 1000:
-        return "взрослый 🧑"
-    else:
+    if total_messages < 50:
         return "ещё не вылупилось 🌱"
+    elif total_messages <= 100:
+        return "яйцо 🥚"
+    elif total_messages <= 500:
+        return "малыш 🐣"
+    elif total_messages <= 1000:
+        return "подросток 🧒"
+    else:
+        return "взрослый 🧑"
 
 def check_stage_upgrade(user_id, pet):
     old_stage = pet['stage']
@@ -127,7 +129,6 @@ def get_state(pet):
         return "счастливый 🌟"
     return "спокойный 🙂"
 
-# --- ВЫБОР ПИТОМЦА ---
 pet_emojis = {
     "кошка": "🐱",
     "лиса": "🦊",
@@ -136,6 +137,7 @@ pet_emojis = {
     "хомяк": "🐹"
 }
 
+# --- КОМАНДЫ ---
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик.\n/newpet — завести питомца\n/feed, /play, /wash, /sleep, /train — ухаживать\n/status — состояние\n/dress — переодеть")
@@ -146,20 +148,19 @@ def new_pet(message):
     if get_pet(user_id):
         bot.send_message(message.chat.id, "У тебя уже есть питомец!")
         return
-    markup = telebot.types.InlineKeyboardMarkup()
-    for name, emoji in pet_emojis.items():
-        markup.add(telebot.types.InlineKeyboardButton(f"{emoji} {name.capitalize()}", callback_data=f"pet_{name}"))
-    bot.send_message(message.chat.id, "🥚 Выбери, кто вылупится из яйца:", reply_markup=markup)
+    bot.send_message(message.chat.id, "🥚 Напиши тип питомца: кошка, лиса, собака, енот, хомяк")
+    bot.register_next_step_handler(message, set_pet_type)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('pet_'))
-def choose_pet(call):
-    user_id = call.from_user.id
-    pet_type = call.data.split('_')[1]
+def set_pet_type(message):
+    user_id = message.from_user.id
+    pet_type = message.text.lower()
+    if pet_type not in pet_emojis:
+        bot.send_message(message.chat.id, "❌ Неверный тип. Напиши: кошка, лиса, собака, енот, хомяк")
+        bot.register_next_step_handler(message, set_pet_type)
+        return
     create_pet(user_id, pet_type)
-    bot.edit_message_text(f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Пиши сообщения, чтобы он рос.", call.message.chat.id, call.message.message_id)
-    bot.answer_callback_query(call.id)
+    bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Пиши сообщения, чтобы он рос.")
 
-# --- КОМАНДЫ УХОДА ---
 @bot.message_handler(commands=['feed'])
 def feed(message):
     user_id = message.from_user.id
@@ -273,7 +274,7 @@ thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-# --- ЗАПУСК ---
-Thread(target=keep_alive).start()
-print("✅ Бот с выбором питомца и новой эволюцией запущен!")
+# --- ЗАПУСК СЕРВЕРА И БОТА ---
+threading.Thread(target=run_server).start()
+print("✅ Бот с портом запущен!")
 bot.polling()
