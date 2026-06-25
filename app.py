@@ -2,9 +2,7 @@ from flask import Flask, send_from_directory, request, jsonify
 from supabase import create_client
 import os
 import random
-import re
 import requests
-import json
 
 app = Flask(__name__, static_folder='webapp')
 
@@ -33,7 +31,7 @@ def save_message(user_id, sender, message):
         'message': message
     }).execute()
 
-def get_chat_history(user_id, limit=5):
+def get_chat_history(user_id, limit=6):
     response = supabase.table('chat_history')\
         .select('*')\
         .eq('user_id', user_id)\
@@ -42,7 +40,6 @@ def get_chat_history(user_id, limit=5):
         .execute()
     return response.data if response.data else []
 
-# --- ЗВУКИ ДЛЯ ПРОМПТА ---
 animal_sounds = {
     "кошка": "мяу",
     "собака": "гав",
@@ -51,33 +48,31 @@ animal_sounds = {
     "хомяк": "пиу"
 }
 
-# --- ФУНКЦИЯ ДЛЯ ЗАПРОСА К ИИ ---
 def ask_ai(user_text, pet):
     pet_type = pet.get('pet_type', 'кошка')
     pet_name = pet.get('pet_name', 'Серийчик')
     sound = animal_sounds.get(pet_type, "мяу")
 
-    # Получаем историю чата (последние 5 сообщений)
-    history = get_chat_history(pet['user_id'], limit=5)
+    history = get_chat_history(pet['user_id'], limit=6)
     history_text = ""
     for msg in history:
         sender = "Пользователь" if msg['sender'] == 'user' else pet_name
         history_text += f"{sender}: {msg['message']}\n"
 
-    # Формируем промпт
     prompt = f"""
-Ты — {pet_type} по имени {pet_name}. Ты общаешься с человеком.
-Ты должен отвечать как живое животное, но при этом поддерживать осмысленный диалог.
+Ты — {pet_type} по имени {pet_name}. Ты живое животное, которое умеет разговаривать.
+Ты общаешься с человеком, поддерживаешь диалог, отвечаешь по смыслу.
 
 Правила:
-- Отвечай коротко (1-2 предложения).
-- Иногда добавляй звук "{sound}" в конце или начале ответа.
-- Используй эмодзи (🐾, 🌟, 🍖, 🎾 и т.д.).
+- Отвечай коротко (1–3 предложения).
+- Иногда добавляй звук "{sound}" в начале или конце.
+- Используй эмодзи (🐾, 🌟, 🍖, 🎾, 💬), но не перебарщивай.
+- Будь добрым, заботливым, иногда забавным.
+- Если человеку плохо — посоветуй обратиться к админу.
+- Если спрашивают про твои предпочтения — отвечай честно (у тебя есть цвет, еда, игрушка, время года).
+- Никогда не используй заготовленные фразы. Всегда отвечай по-новому.
 - Не задавай один и тот же вопрос дважды.
-- Будь дружелюбным, иногда забавным.
-- Если человек говорит, что ему плохо — посоветуй обратиться к админу.
-- Если человек спрашивает о твоих предпочтениях — отвечай честно (у тебя есть свои: любимый цвет, еда, игрушка, время года).
-- Не используй длинные списки и не пиши больше 2 предложений.
+- Не пиши длинные списки и не перечисляй всё подряд.
 
 Вот история вашего диалога (последние сообщения):
 {history_text}
@@ -87,7 +82,6 @@ def ask_ai(user_text, pet):
 Твой ответ:
 """
 
-    # Отправляем запрос к OpenRouter
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
@@ -98,8 +92,8 @@ def ask_ai(user_text, pet):
             {"role": "system", "content": "Ты — дружелюбный питомец, который поддерживает диалог."},
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 60,
-        "temperature": 0.8
+        "max_tokens": 80,
+        "temperature": 0.85
     }
 
     try:
@@ -108,10 +102,9 @@ def ask_ai(user_text, pet):
         ai_response = result['choices'][0]['message']['content'].strip()
         return ai_response
     except Exception as e:
-        # Если ИИ не отвечает, используем запасной вариант
-        return f"Я тебя слышу, но сейчас не могу ответить. {sound}! Давай поговорим позже."
+        return f"Я тебя слышу, но сейчас не могу ответить. {sound}!"
 
-# --- API: ИСТОРИЯ ---
+# --- API ---
 @app.route('/api/history/<int:user_id>')
 def api_history(user_id):
     history = get_chat_history(user_id, limit=50)
@@ -129,7 +122,6 @@ def api_pet(user_id):
         return jsonify({'error': 'Нет питомца'}), 404
     return jsonify(pet)
 
-# --- API: ДЕЙСТВИЯ ---
 @app.route('/api/feed/<int:user_id>', methods=['POST'])
 def api_feed(user_id):
     pet = get_pet(user_id)
@@ -201,7 +193,6 @@ def api_dress(user_id):
     update_pet(user_id, 'одежда', options[new_idx])
     return jsonify({'одежда': options[new_idx], 'message': f'Теперь: {options[new_idx]}'})
 
-# --- API: ЧАТ С ИИ ---
 @app.route('/api/chat/<int:user_id>', methods=['POST'])
 def api_chat(user_id):
     pet = get_pet(user_id)
@@ -211,13 +202,8 @@ def api_chat(user_id):
     data = request.get_json()
     user_text = data.get('text', '')
 
-    # Сохраняем сообщение пользователя
     save_message(user_id, 'user', user_text)
-
-    # Получаем ответ от ИИ
     response = ask_ai(user_text, pet)
-
-    # Сохраняем ответ питомца
     save_message(user_id, 'pet', response)
 
     return jsonify({'response': response})
