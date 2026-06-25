@@ -6,6 +6,7 @@ import re
 
 app = Flask(__name__, static_folder='webapp')
 
+# --- SUPABASE ---
 SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
 SUPABASE_KEY = "sb_publishable_-kqOsr7gFZRi8ctCNPaLgg_4mjU-NZy"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -35,6 +36,7 @@ def get_chat_history(user_id, limit=50):
         .execute()
     return response.data if response.data else []
 
+# --- ЗВУКИ ЖИВОТНЫХ ---
 animal_sounds = {
     "кошка": ["мяу", "мур", "мяф", "фыр"],
     "собака": ["гав", "тяф", "вуф", "ррр"],
@@ -43,40 +45,47 @@ animal_sounds = {
     "хомяк": ["пиу", "цок", "чив", "фрр"]
 }
 
+# --- УМНЫЙ ОТВЕТЧИК С ПАМЯТЬЮ ---
 def get_smart_response(text, pet):
     sound = random.choice(animal_sounds.get(pet.get('pet_type', 'кошка'), ["мяу"]))
     text_lower = text.lower()
 
+    # --- ЛЮБИМЫЙ ЦВЕТ ---
     if re.search(r'любимый цвет|какой цвет любишь|твой цвет', text_lower):
         if pet.get('fav_color'):
             return f"Мой любимый цвет — {pet['fav_color']}! {sound} А твой?"
         else:
             return f"Я ещё не выбрал любимый цвет, {sound}... Какой у тебя любимый? Напиши!"
 
+    # --- ЛЮБИМОЕ ВРЕМЯ СУТОК ---
     if re.search(r'любимое время суток|какое время любишь|утро|день|вечер|ночь', text_lower):
         if pet.get('fav_time'):
             return f"Я больше всего люблю {pet['fav_time']}! {sound} В это время так хорошо!"
         else:
             return f"Я ещё не знаю, какое время суток люблю, {sound}... А ты что любишь?"
 
+    # --- ЛЮБИМОЕ ВРЕМЯ ГОДА ---
     if re.search(r'любимое время года|какое время года любишь|весна|лето|осень|зима', text_lower):
         if pet.get('fav_season'):
             return f"Обожаю {pet['fav_season']}! {sound} Это самое лучшее время года!"
         else:
             return f"Я ещё не решил, какое время года люблю, {sound}... А твоё любимое?"
 
+    # --- ЛЮБИМАЯ ЕДА ---
     if re.search(r'любимая еда|любимое блюдо|что любишь есть|твоя любимая еда', text_lower):
         if pet.get('fav_food'):
             return f"Моя любимая еда — {pet['fav_food']}! {sound} А у тебя?"
         else:
             return f"Я ещё не знаю, что люблю есть, {sound}... А что ты любишь?"
 
+    # --- ЛЮБИМАЯ ИГРУШКА ---
     if re.search(r'любимая игрушка|во что любишь играть|твоя игрушка', text_lower):
         if pet.get('fav_toy'):
             return f"Моя любимая игрушка — {pet['fav_toy']}! {sound} Давай поиграем!"
         else:
             return f"Я ещё не выбрал любимую игрушку, {sound}... А какая у тебя?"
 
+    # --- ПРИВЕТСТВИЯ ---
     if re.search(r'привет|здравствуй|хай|hello|салют|ку', text_lower):
         return random.choice([
             f"Привет-привет! {sound}! Как жизнь?",
@@ -85,6 +94,7 @@ def get_smart_response(text, pet):
             f"Хай! {sound} Как у тебя дела?"
         ])
 
+    # --- КАК ДЕЛА ---
     if re.search(r'как дел|как сам|как жизнь|как ты|как настроение', text_lower):
         return random.choice([
             f"У меня всё супер! {sound} А у тебя?",
@@ -93,6 +103,7 @@ def get_smart_response(text, pet):
             f"Всё замечательно! {sound} Особенно теперь, когда ты рядом!"
         ])
 
+    # --- ЧТО ДЕЛАЕШЬ ---
     if re.search(r'что делаешь|чем занят|чем занимаешься|что делаешь сейчас', text_lower):
         activities = [
             f"Смотрю в окошко, {sound}... там птичка на дереве!",
@@ -104,6 +115,7 @@ def get_smart_response(text, pet):
         ]
         return random.choice(activities)
 
+    # --- ЕДА ---
     if re.search(r'есть|кушать|еда|голод|кормить|любишь ли ты кушать', text_lower):
         return random.choice([
             f"О! Еда! {sound} {sound} Я очень голоден!",
@@ -112,6 +124,7 @@ def get_smart_response(text, pet):
             f"Я бы сейчас что-нибудь съел, {sound}... покорми меня!"
         ])
 
+    # --- ИГРАТЬ ---
     if re.search(r'играть|игра|поиграй|поиграем', text_lower):
         return random.choice([
             f"Давай! {sound}! Я люблю играть!",
@@ -119,6 +132,7 @@ def get_smart_response(text, pet):
             f"Конечно! {sound} Что будем делать?"
         ])
 
+    # --- ЛЮБОВЬ / СКУЧАЛ ---
     if re.search(r'люблю|скучал|соскучился|ты мой любимый', text_lower):
         return random.choice([
             f"Я тоже тебя очень люблю! {sound}! Ты мой самый лучший друг!",
@@ -126,21 +140,25 @@ def get_smart_response(text, pet):
             f"Я тебя обожаю! {sound} Ты у меня самый лучший!"
         ])
 
+    # --- ЕСЛИ НИЧЕГО НЕ ПОНЯЛ ---
     return random.choice([
         f"Я не совсем понял, {sound}... Но я тебя слушаю!",
         f"Прости, {sound}... Я не знаю, что сказать.",
         f"Хм, {sound}... Давай поговорим о чём-то другом?"
     ])
 
+# --- API: ИСТОРИЯ ЧАТА ---
 @app.route('/api/history/<int:user_id>')
 def api_history(user_id):
-    return jsonify(get_chat_history(user_id))
+    history = get_chat_history(user_id)
+    return jsonify(history)
 
 @app.route('/api/clear_history/<int:user_id>', methods=['POST'])
 def api_clear_history(user_id):
     supabase.table('chat_history').delete().eq('user_id', user_id).execute()
-    return jsonify({'message': 'История очищена!'})
+    return jsonify({'message': 'История чата очищена!'})
 
+# --- API: ПОЛУЧИТЬ ПИТОМЦА ---
 @app.route('/api/pet/<int:user_id>')
 def api_pet(user_id):
     pet = get_pet(user_id)
@@ -148,65 +166,73 @@ def api_pet(user_id):
         return jsonify({'error': 'Нет питомца'}), 404
     return jsonify(pet)
 
+# --- API: ПОКОРМИТЬ ---
 @app.route('/api/feed/<int:user_id>', methods=['POST'])
 def api_feed(user_id):
     pet = get_pet(user_id)
     if not pet:
         return jsonify({'error': 'Нет питомца'}), 404
     if pet['голод'] >= 100:
-        return jsonify({'error': 'Я уже сыт!'}), 400
+        return jsonify({'error': 'Я уже сыт! Не корми меня больше 🍖'}), 400
     new_val = min(100, pet['голод'] + 20)
     update_pet(user_id, 'голод', new_val)
-    return jsonify({'голод': new_val, 'message': 'Покормлен! +20'})
+    return jsonify({'голод': new_val, 'message': 'Покормлен! Голод +20'})
 
+# --- API: ПОИГРАТЬ ---
 @app.route('/api/play/<int:user_id>', methods=['POST'])
 def api_play(user_id):
     pet = get_pet(user_id)
     if not pet:
         return jsonify({'error': 'Нет питомца'}), 404
     if pet['энергия'] < 10:
-        return jsonify({'error': 'Я устал!'}), 400
+        return jsonify({'error': 'Я слишком устал! Дай мне поспать 😴'}), 400
+    if pet['счастье'] >= 100:
+        return jsonify({'error': 'Я уже счастлив! 🌟'}), 400
     new_s = min(100, pet['счастье'] + 15)
     new_e = max(0, pet['энергия'] - 10)
     update_pet(user_id, 'счастье', new_s)
     update_pet(user_id, 'энергия', new_e)
-    return jsonify({'счастье': new_s, 'энергия': new_e, 'message': 'Поиграл! +15 счастья'})
+    return jsonify({'счастье': new_s, 'энергия': new_e, 'message': 'Поиграл! Счастье +15, Энергия -10'})
 
+# --- API: ПОМЫТЬ ---
 @app.route('/api/wash/<int:user_id>', methods=['POST'])
 def api_wash(user_id):
     pet = get_pet(user_id)
     if not pet:
         return jsonify({'error': 'Нет питомца'}), 404
     if pet['гигиена'] >= 100:
-        return jsonify({'error': 'Я уже чистый!'}), 400
+        return jsonify({'error': 'Я уже чистый! 🧼'}), 400
     new_val = min(100, pet['гигиена'] + 25)
     update_pet(user_id, 'гигиена', new_val)
-    return jsonify({'гигиена': new_val, 'message': 'Помыт! +25'})
+    return jsonify({'гигиена': new_val, 'message': 'Помыт! Гигиена +25'})
 
+# --- API: ПОСПАТЬ ---
 @app.route('/api/sleep/<int:user_id>', methods=['POST'])
 def api_sleep(user_id):
     pet = get_pet(user_id)
     if not pet:
         return jsonify({'error': 'Нет питомца'}), 404
     if pet['энергия'] >= 100:
-        return jsonify({'error': 'Я не хочу спать!'}), 400
+        return jsonify({'error': 'Я не хочу спать! У меня полная энергия ⚡'}), 400
     new_val = min(100, pet['энергия'] + 30)
     update_pet(user_id, 'энергия', new_val)
-    return jsonify({'энергия': new_val, 'message': 'Поспал! +30'})
+    return jsonify({'энергия': new_val, 'message': 'Поспал! Энергия +30'})
 
+# --- API: ТРЕНИРОВАТЬ ---
 @app.route('/api/train/<int:user_id>', methods=['POST'])
 def api_train(user_id):
     pet = get_pet(user_id)
     if not pet:
         return jsonify({'error': 'Нет питомца'}), 404
     if pet['дисциплина'] >= 100:
-        return jsonify({'error': 'Я уже дисциплинированный!'}), 400
+        return jsonify({'error': 'Я уже очень дисциплинированный! 📏'}), 400
     if pet['энергия'] < 10:
-        return jsonify({'error': 'Я устал для тренировки!'}), 400
+        return jsonify({'error': 'Я слишком устал для тренировки! 😴'}), 400
     new_val = min(100, pet['дисциплина'] + 15)
     update_pet(user_id, 'дисциплина', new_val)
-    return jsonify({'дисциплина': new_val, 'message': 'Тренировка! +15'})
+    return jsonify({'дисциплина': new_val, 'message': 'Тренировка! Дисциплина +15'})
 
+# --- API: ПЕРЕОДЕТЬ ---
 @app.route('/api/dress/<int:user_id>', methods=['POST'])
 def api_dress(user_id):
     pet = get_pet(user_id)
@@ -217,8 +243,9 @@ def api_dress(user_id):
     idx = options.index(current) if current in options else 0
     new_idx = (idx + 1) % len(options)
     update_pet(user_id, 'одежда', options[new_idx])
-    return jsonify({'одежда': options[new_idx], 'message': f'Теперь: {options[new_idx]}'})
+    return jsonify({'одежда': options[new_idx], 'message': f'Теперь на питомце: {options[new_idx]}'})
 
+# --- API: ЧАТ С ПИТОМЦЕМ (с историей) ---
 @app.route('/api/chat/<int:user_id>', methods=['POST'])
 def api_chat(user_id):
     pet = get_pet(user_id)
@@ -229,14 +256,15 @@ def api_chat(user_id):
     save_message(user_id, 'user', user_text)
     response = get_smart_response(user_text, pet)
     if pet['голод'] < 20:
-        response += " (я голоден...)"
+        response += " (кстати, я голоден... покорми меня)"
     elif pet['энергия'] < 20:
-        response += " (я устал...)"
+        response += " (я устал, хочу спать)"
     elif pet['счастье'] > 80:
-        response += " (я счастлив!!)"
+        response += " (я так счастлив!!)"
     save_message(user_id, 'pet', response)
     return jsonify({'response': response})
 
+# --- ОТДАЁМ СТРАНИЦУ ---
 @app.route('/')
 def index():
     return send_from_directory('webapp', 'index.html')
