@@ -90,6 +90,11 @@
             font-size: 14px;
             color: #2d3436;
         }
+        .chat-messages {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 8px;
+        }
         .chat-message {
             display: flex;
             gap: 10px;
@@ -138,6 +143,7 @@
             font-size: 13px;
             color: #636e72;
             min-height: 20px;
+            transition: color 0.3s;
         }
         .footer {
             margin-top: 10px;
@@ -171,7 +177,7 @@
         </div>
 
         <div class="chat-box">
-            <div id="chatMessages">
+            <div class="chat-messages" id="chatMessages">
                 <div class="chat-message">
                     <div class="chat-bubble">Привет! Я твой питомец 🐾</div>
                 </div>
@@ -211,16 +217,25 @@
             container.scrollTop = container.scrollHeight;
         }
 
+        function showNotification(text, isError = true) {
+            const msg = document.getElementById('message');
+            msg.innerText = text;
+            msg.style.color = isError ? '#e17055' : '#00b894';
+            setTimeout(() => {
+                msg.style.color = '#636e72';
+            }, 5000);
+        }
+
         function loadPet() {
             if (!user_id) {
-                document.getElementById('message').innerText = '❌ Не удалось определить пользователя';
+                showNotification('❌ Не удалось определить пользователя');
                 return;
             }
             fetch(`/api/pet/${user_id}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data.error) {
-                        document.getElementById('message').innerText = '❌ ' + data.error;
+                        showNotification('❌ ' + data.error);
                         return;
                     }
                     document.getElementById('petName').innerText = data.pet_name || 'Серийчик';
@@ -234,24 +249,28 @@
                     document.getElementById('soobsh').innerText = data.total_messages;
                 })
                 .catch(() => {
-                    document.getElementById('message').innerText = '❌ Ошибка загрузки';
+                    showNotification('❌ Ошибка загрузки');
                 });
         }
 
         function action(type) {
             if (!user_id) {
-                document.getElementById('message').innerText = '❌ Нет пользователя';
+                showNotification('❌ Нет пользователя');
                 return;
             }
-            document.getElementById('message').innerText = '⏳ ...';
+            showNotification('⏳ ...', false);
             fetch(`/api/${type}/${user_id}`, { method: 'POST' })
-                .then(res => res.json())
-                .then(() => {
-                    document.getElementById('message').innerText = '✅ Готово!';
+                .then(res => res.json().then(data => ({ status: res.status, body: data })))
+                .then(({ status, body }) => {
+                    if (status === 400) {
+                        showNotification('⚠️ ' + (body.error || 'Ошибка'));
+                        return;
+                    }
+                    showNotification('✅ ' + (body.message || 'Готово!'), false);
                     loadPet();
                 })
                 .catch(() => {
-                    document.getElementById('message').innerText = '❌ Ошибка';
+                    showNotification('❌ Ошибка');
                 });
         }
 
@@ -260,25 +279,29 @@
             const text = input.value.trim();
             if (!text) return;
             if (!user_id) {
-                addMessage('❌ Ошибка: нет пользователя', false);
+                showNotification('❌ Нет пользователя');
                 return;
             }
 
             addMessage(text, true);
             input.value = '';
 
-            fetch(`/api/chat/${user_id}`, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.error) {
-                        addMessage('❌ ' + data.error, false);
-                        return;
-                    }
-                    addMessage(data.response, false);
-                })
-                .catch(() => {
-                    addMessage('❌ Ошибка ответа', false);
-                });
+            fetch(`/api/chat/${user_id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    addMessage('❌ ' + data.error, false);
+                    return;
+                }
+                addMessage(data.response, false);
+            })
+            .catch(() => {
+                addMessage('❌ Ошибка ответа', false);
+            });
         }
 
         document.getElementById('chatInput').addEventListener('keydown', function(e) {
