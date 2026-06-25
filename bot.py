@@ -2,14 +2,12 @@ import os
 import random
 import re
 import json
-from flask import Flask, request
-from telebot import TeleBot
-from supabase import create_client
-from difflib import SequenceMatcher
 import threading
 import time
-
-app = Flask(__name__)
+from telebot import TeleBot
+from supabase import create_client
+from flask import Flask, request
+from difflib import SequenceMatcher
 
 # --- SUPABASE ---
 SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
@@ -19,7 +17,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 TOKEN = "8961168833:AAEtlADb8Tyng1LmMbD7d_0Q7AeNkqny_W8"
 bot = TeleBot(TOKEN)
 
-# --- БАЗА ДАННЫХ (Supabase) ---
+# --- БАЗА ДАННЫХ ---
 def get_pet(user_id):
     response = supabase.table('pets').select('*').eq('user_id', user_id).execute()
     if response.data:
@@ -67,10 +65,9 @@ def get_pet_info(pet):
         "fav_season": pet.get('fav_season', 'все сезоны')
     }
 
-# --- КЕШ ДЛЯ ОТВЕТОВ ---
+# --- КЕШ ---
 response_cache = {}
 
-# --- ПОИСК ПОХОЖИХ СООБЩЕНИЙ ---
 def similarity(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
@@ -88,7 +85,6 @@ def find_best_match(text, dialog_dataset):
         return best_key
     return None
 
-# --- ЗАГРУЗКА ДИАЛОГОВ ---
 def load_dialogs():
     try:
         with open('dialogs.json', 'r', encoding='utf-8') as f:
@@ -98,7 +94,6 @@ def load_dialogs():
 
 dialog_dataset = load_dialogs()
 
-# --- ПАТТЕРНЫ ДЛЯ БЫСТРЫХ ОТВЕТОВ ---
 dialog_patterns = {
     r'(плохо|грустно|больно|обидно|ужасно|тяжело|слёзы|плачу|депрессия|одинок|одиноко|нет сил|вымотан|всё надоело)': [
         "Мне жаль это слышать, {sound}... Ты не один(на). Напиши своему админу в боте, он поможет.",
@@ -112,17 +107,14 @@ dialog_patterns = {
     ]
 }
 
-# --- ОСНОВНАЯ ФУНКЦИЯ ---
 def get_smart_response(user_id, text, pet):
     text_lower = text.lower().strip()
     sound = random.choice(animal_sounds.get(pet.get('pet_type', 'кошка'), ["мяу"]))
     pet_info = get_pet_info(pet)
 
-    # Проверяем кеш
     if text_lower in response_cache:
         return response_cache[text_lower]
 
-    # 1. Паттерны
     for pattern, responses in dialog_patterns.items():
         if re.search(pattern, text_lower):
             response = random.choice(responses)
@@ -132,7 +124,6 @@ def get_smart_response(user_id, text, pet):
             response_cache[text_lower] = response
             return response
 
-    # 2. Похожие сообщения
     if dialog_dataset:
         best_category = find_best_match(text_lower, dialog_dataset)
         if best_category and best_category in dialog_dataset:
@@ -145,7 +136,6 @@ def get_smart_response(user_id, text, pet):
                 response_cache[text_lower] = response
                 return response
 
-    # 3. История
     history = get_chat_history(user_id, limit=6)
     if history:
         last_msgs = [h['message'] for h in history if h['sender'] == 'user']
@@ -159,7 +149,6 @@ def get_smart_response(user_id, text, pet):
             response_cache[text_lower] = response
             return response
 
-    # 4. Общие ответы
     generic = [
         f"*виляю хвостом* Мне нравится разговаривать с тобой, хозяин.",
         f"{sound} Я не совсем понял, но мне интересно. Расскажи подробнее.",
@@ -172,10 +161,10 @@ def get_smart_response(user_id, text, pet):
     response_cache[text_lower] = response
     return response
 
-# --- КОМАНДЫ БОТА ---
+# --- КОМАНДЫ ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик. Напиши /newpet — завести питомца, /help — список команд, /app — открыть мини-приложение.")
+    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик. Напиши /newpet — завести питомца, /help — список команд.")
 
 @bot.message_handler(commands=['newpet'])
 def new_pet(message):
@@ -233,7 +222,7 @@ def status(message):
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
-    bot.send_message(message.chat.id, "📋 Команды:\n/newpet — завести питомца\n/status — состояние питомца\n/feed — покормить\n/play — поиграть\n/wash — помыть\n/sleep — поспать\n/train — тренировать\n/dress — переодеть\n/app — открыть мини-приложение\n/help — этот список")
+    bot.send_message(message.chat.id, "📋 Команды:\n/newpet — завести питомца\n/status — состояние\n/feed — покормить\n/play — поиграть\n/wash — помыть\n/sleep — поспать\n/train — тренировать\n/dress — переодеть\n/app — мини-приложение\n/help — этот список")
 
 @bot.message_handler(commands=['feed'])
 def feed(message):
@@ -324,30 +313,14 @@ def handle_all_messages(message):
     pet = get_pet(user_id)
     if not pet:
         return
-    # Обновляем счётчик сообщений
     new_total = pet['total_messages'] + 1
     update_pet(user_id, 'total_messages', new_total)
-    # Сохраняем сообщение
     save_message(user_id, 'user', message.text)
-    # Генерируем ответ
     response = get_smart_response(user_id, message.text, pet)
     save_message(user_id, 'pet', response)
     bot.send_message(message.chat.id, response)
 
-# --- WEBHOOK ---
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    update = request.get_json()
-    if update:
-        bot.process_new_updates([update])
-    return "OK", 200
-
-@app.route('/ping', methods=['GET'])
-def ping():
-    return "I'm alive!", 200
-
+# --- ЗАПУСК ---
 if __name__ == '__main__':
-    # Устанавливаем вебхук
-    bot.set_webhook(url='https://seriychik-bot.onrender.com/webhook')
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    print("✅ Бот запущен!")
+    bot.polling()
