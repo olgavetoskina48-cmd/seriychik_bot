@@ -322,5 +322,6 @@ def handle_all_messages(message):
 
 # --- ЗАПУСК ---
 if __name__ == '__main__':
+    bot.delete_webhook()
     print("✅ Бот запущен!")
     bot.polling()
