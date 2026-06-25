@@ -62,13 +62,16 @@
             font-weight: 500;
             cursor: pointer;
             flex: 1 0 auto;
-            min-width: 80px;
+            min-width: 60px;
             transition: 0.2s;
             box-shadow: 0 4px 8px rgba(108,92,231,0.25);
         }
         .btn:active { transform: scale(0.95); }
         .btn-green { background: #00b894; box-shadow: 0 4px 8px rgba(0,184,148,0.25); }
+        .btn-blue { background: #0984e3; box-shadow: 0 4px 8px rgba(9,132,227,0.25); }
         .btn-orange { background: #fdcb6e; color: #2d3436; box-shadow: 0 4px 8px rgba(253,203,110,0.3); }
+        .btn-purple { background: #a29bfe; box-shadow: 0 4px 8px rgba(162,155,254,0.25); }
+        .btn-pink { background: #fd79a8; box-shadow: 0 4px 8px rgba(253,121,168,0.25); }
         .message {
             margin-top: 16px;
             font-size: 14px;
@@ -100,6 +103,9 @@
         <div class="btn-group">
             <button class="btn btn-green" onclick="action('feed')">🍖</button>
             <button class="btn btn-orange" onclick="action('play')">🎾</button>
+            <button class="btn btn-blue" onclick="action('wash')">🧼</button>
+            <button class="btn btn-purple" onclick="action('sleep')">😴</button>
+            <button class="btn btn-pink" onclick="action('train')">🏋️</button>
             <button class="btn" onclick="action('dress')">👕</button>
         </div>
         <div id="message" class="message">Нажми кнопку, чтобы взаимодействовать</div>
@@ -166,4 +172,4 @@
         loadPet();
     </script>
 </body>
-      </html>
+            </html>
