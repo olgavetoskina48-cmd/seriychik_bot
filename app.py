@@ -3,6 +3,8 @@ from supabase import create_client
 import os
 import random
 import re
+import requests
+import json
 
 app = Flask(__name__, static_folder='webapp')
 
@@ -10,6 +12,10 @@ app = Flask(__name__, static_folder='webapp')
 SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
 SUPABASE_KEY = "sb_publishable_-kqOsr7gFZRi8ctCNPaLgg_4mjU-NZy"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# --- OPENROUTER API ---
+OPENROUTER_API_KEY = "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"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 def get_pet(user_id):
     response = supabase.table('pets').select('*').eq('user_id', user_id).execute()
@@ -27,7 +33,7 @@ def save_message(user_id, sender, message):
         'message': message
     }).execute()
 
-def get_chat_history(user_id, limit=50):
+def get_chat_history(user_id, limit=5):
     response = supabase.table('chat_history')\
         .select('*')\
         .eq('user_id', user_id)\
@@ -36,120 +42,80 @@ def get_chat_history(user_id, limit=50):
         .execute()
     return response.data if response.data else []
 
-# --- ЗВУКИ ЖИВОТНЫХ ---
+# --- ЗВУКИ ДЛЯ ПРОМПТА ---
 animal_sounds = {
-    "кошка": ["мяу", "мур", "мяф", "фыр"],
-    "собака": ["гав", "тяф", "вуф", "ррр"],
-    "лиса": ["фыр", "кхе", "ууу", "шшш"],
-    "енот": ["хрум", "шурх", "фырк", "пиу"],
-    "хомяк": ["пиу", "цок", "чив", "фрр"]
+    "кошка": "мяу",
+    "собака": "гав",
+    "лиса": "фыр",
+    "енот": "хрум",
+    "хомяк": "пиу"
 }
 
-# --- УМНЫЙ ОТВЕТЧИК ---
-def get_smart_response(text, pet):
-    sound = random.choice(animal_sounds.get(pet.get('pet_type', 'кошка'), ["мяу"]))
-    text_lower = text.lower()
+# --- ФУНКЦИЯ ДЛЯ ЗАПРОСА К ИИ ---
+def ask_ai(user_text, pet):
+    pet_type = pet.get('pet_type', 'кошка')
+    pet_name = pet.get('pet_name', 'Серийчик')
+    sound = animal_sounds.get(pet_type, "мяу")
 
-    # --- 1. НЕГАТИВ ---
-    if re.search(r'плохо|грустно|больно|обидно|ужасно|тяжело|слёзы|плачу|депрессия|одинок|одиноко', text_lower):
-        return f"Мне жаль это слышать, {sound}... Ты не один(на). Пожалуйста, напиши своему админу в боте, он поможет тебе. Я рядом, но админ сможет поддержать лучше."
+    # Получаем историю чата (последние 5 сообщений)
+    history = get_chat_history(pet['user_id'], limit=5)
+    history_text = ""
+    for msg in history:
+        sender = "Пользователь" if msg['sender'] == 'user' else pet_name
+        history_text += f"{sender}: {msg['message']}\n"
 
-    # --- 2. ВСЁ ХОРОШО ---
-    if re.search(r'всё хорошо|все хорошо|у меня всё хорошо|все отлично|нормально|супер|классно|замечательно', text_lower):
-        return random.choice([
-            f"Я рад, что у тебя всё хорошо! {sound} Это отличная новость!",
-            f"Здорово! {sound} Хорошее настроение — это важно!",
-            f"Ура! {sound} Я так рад за тебя!",
-            f"Круто! {sound} Пусть так будет всегда!",
-            f"Отлично! {sound} Теперь и у меня настроение поднялось!"
-        ])
+    # Формируем промпт
+    prompt = f"""
+Ты — {pet_type} по имени {pet_name}. Ты общаешься с человеком.
+Ты должен отвечать как живое животное, но при этом поддерживать осмысленный диалог.
 
-    # --- 3. ПОГОДА ---
-    if re.search(r'погода|солнце|дождь|снег|ветер|облачно|тепло|холодно', text_lower):
-        return random.choice([
-            f"На улице хорошая погода, {sound}! А ты что думаешь?",
-            f"Дождь за окном, {sound}... так уютно!",
-            f"Солнце светит! {sound} Отличный день для прогулки!",
-            f"Снег идёт, {sound}! Холодно, но красиво.",
-            f"Ветрено сегодня, {sound}... держись!"
-        ])
+Правила:
+- Отвечай коротко (1-2 предложения).
+- Иногда добавляй звук "{sound}" в конце или начале ответа.
+- Используй эмодзи (🐾, 🌟, 🍖, 🎾 и т.д.).
+- Не задавай один и тот же вопрос дважды.
+- Будь дружелюбным, иногда забавным.
+- Если человек говорит, что ему плохо — посоветуй обратиться к админу.
+- Если человек спрашивает о твоих предпочтениях — отвечай честно (у тебя есть свои: любимый цвет, еда, игрушка, время года).
+- Не используй длинные списки и не пиши больше 2 предложений.
 
-    # --- 4. ЛЮБИМЫЙ ЦВЕТ ПИТОМЦА ---
-    if re.search(r'твой любимый цвет|какой цвет любишь ты|твой цвет', text_lower):
-        if pet.get('fav_color') and pet['fav_color'] != 'None':
-            return f"Мой любимый цвет — {pet['fav_color']}! {sound} А у тебя какой?"
-        else:
-            return f"Я ещё не выбрал любимый цвет, {sound}... Какой у тебя любимый?"
+Вот история вашего диалога (последние сообщения):
+{history_text}
 
-    # --- 5. ЛЮБИМАЯ ИГРУШКА ---
-    if re.search(r'твоя любимая игрушка|во что ты любишь играть', text_lower):
-        if pet.get('fav_toy') and pet['fav_toy'] != 'None':
-            return f"Моя любимая игрушка — {pet['fav_toy']}! {sound} Давай поиграем!"
-        else:
-            return f"Я ещё не выбрал любимую игрушку, {sound}... А какая у тебя?"
+Сейчас пользователь сказал: "{user_text}"
 
-    # --- 6. ПРИВЕТСТВИЯ ---
-    if re.search(r'привет|здравствуй|хай|hello|салют|ку', text_lower):
-        return random.choice([
-            f"Привет-привет! {sound}! Как жизнь?",
-            f"О, привет! {sound} Я так рад тебя видеть!",
-            f"Здравствуй! {sound} Давно не виделись!"
-        ])
+Твой ответ:
+"""
 
-    # --- 7. КАК ДЕЛА ---
-    if re.search(r'как дел|как сам|как жизнь|как ты|как настроение', text_lower):
-        return random.choice([
-            f"У меня всё супер! {sound} А у тебя?",
-            f"Отлично! {sound} Сегодня чудесный день!",
-            f"Я в порядке, {sound}! Немного устал, но держусь."
-        ])
+    # Отправляем запрос к OpenRouter
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "messages": [
+            {"role": "system", "content": "Ты — дружелюбный питомец, который поддерживает диалог."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 60,
+        "temperature": 0.8
+    }
 
-    # --- 8. ЧТО ДЕЛАЕШЬ ---
-    if re.search(r'что делаешь|чем занят|чем занимаешься|что делаешь сейчас', text_lower):
-        activities = [
-            f"Смотрю в окошко, {sound}... там птичка на дереве!",
-            f"Играю с хвостом, {sound}! Он всё время от меня убегает!",
-            f"Лежу на солнышке, {sound}... так тепло и хорошо.",
-            f"Думаю о чём-то важном, {sound}... о мире во всём мире.",
-            f"Жду тебя! {sound} А то скучно одному."
-        ]
-        return random.choice(activities)
+    try:
+        response = requests.post(OPENROUTER_URL, headers=headers, json=data)
+        result = response.json()
+        ai_response = result['choices'][0]['message']['content'].strip()
+        return ai_response
+    except Exception as e:
+        # Если ИИ не отвечает, используем запасной вариант
+        return f"Я тебя слышу, но сейчас не могу ответить. {sound}! Давай поговорим позже."
 
-    # --- 9. ЕДА ---
-    if re.search(r'есть|кушать|еда|голод|кормить', text_lower):
-        return random.choice([
-            f"О! Еда! {sound} {sound} Я очень голоден!",
-            f"Обожаю кушать! {sound} Особенно вкусняшки!",
-            f"Конечно, люблю! {sound} А кто не любит?"
-        ])
-
-    # --- 10. ИГРАТЬ ---
-    if re.search(r'играть|игра|поиграй|поиграем', text_lower):
-        return random.choice([
-            f"Давай! {sound}! Я люблю играть!",
-            f"Ура! Игра! {sound} Я уже бегу!",
-            f"Конечно! {sound} Что будем делать?"
-        ])
-
-    # --- 11. ЛЮБОВЬ / СКУЧАЛ ---
-    if re.search(r'люблю|скучал|соскучился|ты мой любимый', text_lower):
-        return random.choice([
-            f"Я тоже тебя очень люблю! {sound}! Ты мой самый лучший друг!",
-            f"Конечно, скучал! {sound} Ты долго не появлялся!",
-            f"Я тебя обожаю! {sound} Ты у меня самый лучший!"
-        ])
-
-    # --- 12. ЕСЛИ НИЧЕГО НЕ ПОНЯЛ ---
-    return random.choice([
-        f"Я не совсем понял, {sound}... Но я тебя слушаю!",
-        f"Прости, {sound}... Я не знаю, что сказать.",
-        f"Хм, {sound}... Давай поговорим о чём-то другом?"
-    ])
-
-# --- API ---
+# --- API: ИСТОРИЯ ---
 @app.route('/api/history/<int:user_id>')
 def api_history(user_id):
-    return jsonify(get_chat_history(user_id))
+    history = get_chat_history(user_id, limit=50)
+    return jsonify(history)
 
 @app.route('/api/clear_history/<int:user_id>', methods=['POST'])
 def api_clear_history(user_id):
@@ -163,6 +129,7 @@ def api_pet(user_id):
         return jsonify({'error': 'Нет питомца'}), 404
     return jsonify(pet)
 
+# --- API: ДЕЙСТВИЯ ---
 @app.route('/api/feed/<int:user_id>', methods=['POST'])
 def api_feed(user_id):
     pet = get_pet(user_id)
@@ -234,22 +201,25 @@ def api_dress(user_id):
     update_pet(user_id, 'одежда', options[new_idx])
     return jsonify({'одежда': options[new_idx], 'message': f'Теперь: {options[new_idx]}'})
 
+# --- API: ЧАТ С ИИ ---
 @app.route('/api/chat/<int:user_id>', methods=['POST'])
 def api_chat(user_id):
     pet = get_pet(user_id)
     if not pet:
         return jsonify({'error': 'Нет питомца'}), 404
+
     data = request.get_json()
     user_text = data.get('text', '')
+
+    # Сохраняем сообщение пользователя
     save_message(user_id, 'user', user_text)
-    response = get_smart_response(user_text, pet)
-    if pet['голод'] < 20:
-        response += " (кстати, я голоден... покорми меня)"
-    elif pet['энергия'] < 20:
-        response += " (я устал, хочу спать)"
-    elif pet['счастье'] > 80:
-        response += " (я так счастлив!!)"
+
+    # Получаем ответ от ИИ
+    response = ask_ai(user_text, pet)
+
+    # Сохраняем ответ питомца
     save_message(user_id, 'pet', response)
+
     return jsonify({'response': response})
 
 @app.route('/')
