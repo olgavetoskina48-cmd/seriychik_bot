@@ -1,15 +1,20 @@
 import telebot
-import sqlite3
 import threading
 import time
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from supabase import create_client
 
 TOKEN = "8961168833:AAEtlADb8Tyng1LmMbD7d_0Q7AeNkqny_W8"
 bot = telebot.TeleBot(TOKEN)
 
 ADMINS = []
 user_choice = {}
+
+# --- SUPABASE ---
+SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
+SUPABASE_KEY = "sb_publishable_-kqOsr7gFZRi8ctCNPaLgg_4mjU-NZy"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- ПОРТ ДЛЯ RENDER ---
 class Handler(BaseHTTPRequestHandler):
@@ -23,60 +28,31 @@ def run_server():
     server = HTTPServer(('0.0.0.0', port), Handler)
     server.serve_forever()
 
-# --- БАЗА ДАННЫХ ---
-def init_db():
-    conn = sqlite3.connect('pets.db', check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pets (
-            user_id INTEGER PRIMARY KEY,
-            голод INTEGER DEFAULT 50,
-            счастье INTEGER DEFAULT 50,
-            гигиена INTEGER DEFAULT 50,
-            энергия INTEGER DEFAULT 50,
-            дисциплина INTEGER DEFAULT 50,
-            дни INTEGER DEFAULT 0,
-            одежда TEXT DEFAULT 'без одежды',
-            age INTEGER DEFAULT 1,
-            total_messages INTEGER DEFAULT 0,
-            stage TEXT DEFAULT 'в пути 🌱',
-            pet_type TEXT DEFAULT 'кошка'
-        )
-    ''')
-    conn.commit()
-    return conn
-
-db = init_db()
-
+# --- БАЗА ДАННЫХ (Supabase) ---
 def get_pet(user_id):
-    cursor = db.cursor()
-    cursor.execute('SELECT * FROM pets WHERE user_id = ?', (user_id,))
-    row = cursor.fetchone()
-    if row:
-        return {
-            'голод': row[1],
-            'счастье': row[2],
-            'гигиена': row[3],
-            'энергия': row[4],
-            'дисциплина': row[5],
-            'дни': row[6],
-            'одежда': row[7],
-            'age': row[8],
-            'total_messages': row[9],
-            'stage': row[10],
-            'pet_type': row[11]
-        }
+    response = supabase.table('pets').select('*').eq('user_id', user_id).execute()
+    if response.data:
+        return response.data[0]
     return None
 
 def create_pet(user_id, pet_type):
-    cursor = db.cursor()
-    cursor.execute('INSERT INTO pets (user_id, pet_type) VALUES (?, ?)', (user_id, pet_type))
-    db.commit()
+    supabase.table('pets').insert({
+        'user_id': user_id,
+        'pet_type': pet_type,
+        'stage': 'в пути 🌱',
+        'age': 1,
+        'total_messages': 0,
+        'голод': 50,
+        'счастье': 50,
+        'гигиена': 50,
+        'энергия': 50,
+        'дисциплина': 50,
+        'дни': 0,
+        'одежда': 'без одежды'
+    }).execute()
 
 def update_pet(user_id, field, value):
-    cursor = db.cursor()
-    cursor.execute(f'UPDATE pets SET {field} = ? WHERE user_id = ?', (value, user_id))
-    db.commit()
+    supabase.table('pets').update({field: value}).eq('user_id', user_id).execute()
 
 def get_stage(total_messages):
     if total_messages < 100:
@@ -164,7 +140,8 @@ def feed(message):
     if not pet:
         bot.send_message(message.chat.id, "Сначала /newpet")
         return
-    update_pet(user_id, 'голод', min(100, pet['голод'] + 20))
+    new_val = min(100, pet['голод'] + 20)
+    update_pet(user_id, 'голод', new_val)
     bot.send_message(message.chat.id, "🍖 Покормлен! Голод +20")
 
 @bot.message_handler(commands=['play'])
@@ -174,8 +151,10 @@ def play(message):
     if not pet:
         bot.send_message(message.chat.id, "Сначала /newpet")
         return
-    update_pet(user_id, 'счастье', min(100, pet['счастье'] + 15))
-    update_pet(user_id, 'энергия', max(0, pet['энергия'] - 10))
+    new_s = min(100, pet['счастье'] + 15)
+    new_e = max(0, pet['энергия'] - 10)
+    update_pet(user_id, 'счастье', new_s)
+    update_pet(user_id, 'энергия', new_e)
     bot.send_message(message.chat.id, "🎾 Поиграл! Счастье +15, Энергия -10")
 
 @bot.message_handler(commands=['wash'])
@@ -185,7 +164,8 @@ def wash(message):
     if not pet:
         bot.send_message(message.chat.id, "Сначала /newpet")
         return
-    update_pet(user_id, 'гигиена', min(100, pet['гигиена'] + 25))
+    new_val = min(100, pet['гигиена'] + 25)
+    update_pet(user_id, 'гигиена', new_val)
     bot.send_message(message.chat.id, "🧼 Помыт! Гигиена +25")
 
 @bot.message_handler(commands=['sleep'])
@@ -195,7 +175,8 @@ def sleep(message):
     if not pet:
         bot.send_message(message.chat.id, "Сначала /newpet")
         return
-    update_pet(user_id, 'энергия', min(100, pet['энергия'] + 30))
+    new_val = min(100, pet['энергия'] + 30)
+    update_pet(user_id, 'энергия', new_val)
     bot.send_message(message.chat.id, "😴 Поспал! Энергия +30")
 
 @bot.message_handler(commands=['train'])
@@ -205,7 +186,8 @@ def train(message):
     if not pet:
         bot.send_message(message.chat.id, "Сначала /newpet")
         return
-    update_pet(user_id, 'дисциплина', min(100, pet['дисциплина'] + 15))
+    new_val = min(100, pet['дисциплина'] + 15)
+    update_pet(user_id, 'дисциплина', new_val)
     bot.send_message(message.chat.id, "🏋️ Тренировка! Дисциплина +15")
 
 @bot.message_handler(commands=['status'])
@@ -244,7 +226,7 @@ def app_command(message):
     ))
     bot.send_message(message.chat.id, "Нажми на кнопку, чтобы открыть питомца в отдельном окне:", reply_markup=markup)
 
-# --- СООБЩЕНИЯ (рост за счёт них) ---
+# --- СООБЩЕНИЯ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -263,23 +245,23 @@ def handle_all_messages(message):
 def update_days():
     while True:
         time.sleep(86400)
-        cursor = db.cursor()
-        cursor.execute('''
-            UPDATE pets SET
-                дни = дни + 1,
-                голод = MAX(0, голод - 5),
-                счастье = MAX(0, счастье - 3),
-                гигиена = MAX(0, гигиена - 5),
-                энергия = MAX(0, энергия - 4),
-                дисциплина = MAX(0, дисциплина - 2)
-        ''')
-        db.commit()
+        pets = supabase.table('pets').select('user_id', 'голод', 'счастье', 'гигиена', 'энергия', 'дисциплина', 'дни').execute()
+        for p in pets.data:
+            new_data = {
+                'дни': p['дни'] + 1,
+                'голод': max(0, p['голод'] - 5),
+                'счастье': max(0, p['счастье'] - 3),
+                'гигиена': max(0, p['гигиена'] - 5),
+                'энергия': max(0, p['энергия'] - 4),
+                'дисциплина': max(0, p['дисциплина'] - 2)
+            }
+            supabase.table('pets').update(new_data).eq('user_id', p['user_id']).execute()
 
 thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-# --- ЗАПУСК ПОРТА И БОТА ---
+# --- ЗАПУСК ---
 threading.Thread(target=run_server).start()
-print("✅ Бот с Mini App запущен!")
+print("✅ Бот с Supabase и Mini App запущен!")
 bot.polling()
