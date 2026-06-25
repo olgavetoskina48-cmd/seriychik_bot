@@ -11,7 +11,7 @@ bot = telebot.TeleBot(TOKEN)
 ADMINS = []
 user_choice = {}
 
-# --- ПОРТ ---
+# --- ПОРТ ДЛЯ RENDER ---
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -79,13 +79,13 @@ def update_pet(user_id, field, value):
     db.commit()
 
 def get_stage(total_messages):
-    if total_messages < 50:
+    if total_messages < 100:
         return "в пути 🌱"
-    elif total_messages <= 150:
+    elif total_messages <= 250:
         return "яйцо 🥚"
-    elif total_messages <= 400:
+    elif total_messages <= 500:
         return "малыш 🐣"
-    elif total_messages <= 800:
+    elif total_messages <= 1000:
         return "подросток 🧒"
     else:
         return "взрослый 🧑"
@@ -129,7 +129,7 @@ pet_emojis = {
 # --- КОМАНДЫ ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик.\n/newpet — завести питомца\n/feed, /play, /wash, /sleep, /train — ухаживать\n/status — состояние\n/dress — переодеть")
+    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик.\n/newpet — завести питомца\n/feed, /play, /wash, /sleep, /train — ухаживать\n/status — состояние\n/dress — переодеть\n/app — открыть питомца в мини-приложении")
 
 @bot.message_handler(commands=['newpet'])
 def new_pet(message):
@@ -155,7 +155,7 @@ def set_pet_type(message):
         return
     create_pet(user_id, pet_type)
     user_choice.pop(user_id, None)
-    bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Чтобы он вылупился, нужно 50 сообщений.")
+    bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Чтобы он вылупился, нужно 100 сообщений.")
 
 @bot.message_handler(commands=['feed'])
 def feed(message):
@@ -234,7 +234,17 @@ def dress(message):
     update_pet(user_id, 'одежда', options[new_idx])
     bot.send_message(message.chat.id, f"Теперь на питомце: {options[new_idx]}")
 
-# --- СООБЩЕНИЯ ---
+# --- КОМАНДА ДЛЯ MINI APP ---
+@bot.message_handler(commands=['app'])
+def app_command(message):
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton(
+        text="🐾 Открыть Серийчика",
+        web_app=telebot.types.WebAppInfo(url="https://seriychik-webapp.onrender.com")
+    ))
+    bot.send_message(message.chat.id, "Нажми на кнопку, чтобы открыть питомца в отдельном окне:", reply_markup=markup)
+
+# --- СООБЩЕНИЯ (рост за счёт них) ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -269,7 +279,7 @@ thread = threading.Thread(target=update_days)
 thread.daemon = True
 thread.start()
 
-# --- ЗАПУСК ---
+# --- ЗАПУСК ПОРТА И БОТА ---
 threading.Thread(target=run_server).start()
-print("✅ Бот с яйцом от 50 сообщений запущен!")
+print("✅ Бот с Mini App запущен!")
 bot.polling()
