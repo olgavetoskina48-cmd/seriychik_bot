@@ -2,6 +2,7 @@ import telebot
 import threading
 import time
 import os
+import random
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from supabase import create_client
 
@@ -15,6 +16,13 @@ user_choice = {}
 SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
 SUPABASE_KEY = "sb_publishable_-kqOsr7gFZRi8ctCNPaLgg_4mjU-NZy"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# --- СПИСОК ДЛЯ СЛУЧАЙНЫХ ПРЕДПОЧТЕНИЙ ---
+colors = ["красный", "синий", "зелёный", "жёлтый", "фиолетовый", "розовый", "оранжевый", "голубой"]
+times = ["утро", "день", "вечер", "ночь"]
+seasons = ["весна", "лето", "осень", "зима"]
+foods = ["рыбка", "сосиски", "мороженое", "печенье", "мясо"]
+toys = ["мячик", "косточка", "мышка", "верёвка", "подушка"]
 
 # --- ПОРТ ДЛЯ RENDER ---
 class Handler(BaseHTTPRequestHandler):
@@ -49,7 +57,12 @@ def create_pet(user_id, pet_type):
         'энергия': 50,
         'дисциплина': 50,
         'дни': 0,
-        'одежда': 'без одежды'
+        'одежда': 'без одежды',
+        'fav_color': random.choice(colors),
+        'fav_time': random.choice(times),
+        'fav_season': random.choice(seasons),
+        'fav_food': random.choice(foods),
+        'fav_toy': random.choice(toys)
     }).execute()
 
 def update_pet(user_id, field, value):
@@ -134,7 +147,6 @@ def set_pet_type(message):
     user_choice.pop(user_id, None)
     bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Чтобы он вылупился, нужно 100 сообщений.")
 
-# --- НОВАЯ КОМАНДА: ИМЯ ПИТОМЦА ---
 @bot.message_handler(commands=['name'])
 def set_name(message):
     user_id = message.from_user.id
@@ -238,7 +250,6 @@ def dress(message):
     update_pet(user_id, 'одежда', options[new_idx])
     bot.send_message(message.chat.id, f"Теперь на питомце: {options[new_idx]}")
 
-# --- КОМАНДА ДЛЯ MINI APP ---
 @bot.message_handler(commands=['app'])
 def app_command(message):
     markup = telebot.types.InlineKeyboardMarkup()
@@ -285,5 +296,5 @@ thread.start()
 
 # --- ЗАПУСК ---
 threading.Thread(target=run_server).start()
-print("✅ Бот с именем и чатом запущен!")
+print("✅ Бот с памятью и умным чатом запущен!")
 bot.polling()
