@@ -59,7 +59,6 @@ def ask_ai(user_text, pet):
         sender = "Пользователь" if msg['sender'] == 'user' else pet_name
         history_text += f"{sender}: {msg['message']}\n"
 
-    # Формируем промпт
     prompt = f"""
 Ты — {pet_type} по имени {pet_name}. Ты живое животное, которое умеет разговаривать.
 Ты общаешься с человеком, поддерживаешь диалог, отвечаешь по смыслу.
@@ -70,10 +69,9 @@ def ask_ai(user_text, pet):
 - Используй эмодзи (🐾, 🌟, 🍖, 🎾, 💬), но не перебарщивай.
 - Будь добрым, заботливым, иногда забавным.
 - Если человеку плохо — посоветуй обратиться к админу.
-- Если спрашивают про твои предпочтения — отвечай честно (у тебя есть цвет, еда, игрушка, время года).
-- Никогда не используй заготовленные фразы. Всегда отвечай по-новому.
+- Если спрашивают про твои предпочтения — отвечай честно.
+- Никогда не используй заготовленные фразы.
 - Не задавай один и тот же вопрос дважды.
-- Не пиши длинные списки и не перечисляй всё подряд.
 
 Вот история вашего диалога (последние сообщения):
 {history_text}
@@ -83,16 +81,15 @@ def ask_ai(user_text, pet):
 Твой ответ:
 """
 
-    # --- ОТПРАВКА ЗАПРОСА К OPENROUTER ---
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
 
     payload = {
-        "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "model": "mistralai/mistral-7b-instruct:free",
         "messages": [
-            {"role": "system", "content": "Ты — дружелюбный питомец, который поддерживает диалог."},
+            {"role": "system", "content": "Ты — дружелюбный питомец."},
             {"role": "user", "content": prompt}
         ],
         "max_tokens": 100,
@@ -101,8 +98,6 @@ def ask_ai(user_text, pet):
 
     try:
         response = requests.post(OPENROUTER_URL, headers=headers, json=payload)
-        print("Status:", response.status_code)  # для отладки
-        print("Response:", response.text)       # для отладки
 
         if response.status_code == 200:
             result = response.json()
@@ -112,7 +107,7 @@ def ask_ai(user_text, pet):
             return f"Ошибка API: {response.status_code}. {sound}! Попробуй ещё раз."
 
     except Exception as e:
-        return f"Ошибка соединения: {e}. {sound}! Попробуй позже."
+        return f"Ошибка: {e}. {sound}! Попробуй позже."
 
 # --- API ---
 @app.route('/api/history/<int:user_id>')
