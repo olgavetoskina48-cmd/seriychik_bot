@@ -46,17 +46,6 @@ animal_sounds = {
     "хомяк": ["пиу", "цок", "чив", "фрр"]
 }
 
-# --- ЗАГРУЗКА ДИАЛОГОВ ИЗ JSON ---
-def load_dialogs():
-    try:
-        with open('dialogs.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        return {}
-
-dialog_dataset = load_dialogs()
-
-# --- ДАННЫЕ О ПИТОМЦЕ ---
 def get_pet_info(pet):
     return {
         "pet_name": pet.get('pet_name', 'Серийчик'),
@@ -69,7 +58,34 @@ def get_pet_info(pet):
         "fav_season": pet.get('fav_season', 'все сезоны')
     }
 
-# --- ПАТТЕРНЫ ДЛЯ БЫСТРЫХ ОТВЕТОВ ---
+response_cache = {}
+
+def similarity(a, b):
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+def find_best_match(text, dialog_dataset):
+    best_score = 0
+    best_key = None
+    for category_name, category_data in dialog_dataset.items():
+        if "keywords" in category_data:
+            for keyword in category_data["keywords"]:
+                score = similarity(text, keyword)
+                if score > best_score:
+                    best_score = score
+                    best_key = category_name
+    if best_score > 0.65:
+        return best_key
+    return None
+
+def load_dialogs():
+    try:
+        with open('dialogs.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {}
+
+dialog_dataset = load_dialogs()
+
 dialog_patterns = {
     r'(плохо|грустно|больно|обидно|ужасно|тяжело|слёзы|плачу|депрессия|одинок|одиноко|нет сил|вымотан|всё надоело)': [
         "Мне жаль это слышать, {sound}... Ты не один(на). Напиши своему админу в боте, он поможет.",
@@ -83,65 +99,48 @@ dialog_patterns = {
     ]
 }
 
-# --- ПОИСК ПОХОЖИХ СООБЩЕНИЙ ---
-def similarity(a, b):
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
-
-def find_best_match(text):
-    best_score = 0
-    best_key = None
-    
-    for category_name, category_data in dialog_dataset.items():
-        if "keywords" in category_data:
-            for keyword in category_data["keywords"]:
-                score = similarity(text, keyword)
-                if score > best_score:
-                    best_score = score
-                    best_key = category_name
-    
-    if best_score > 0.65:
-        return best_key
-    return None
-
-# --- ОСНОВНАЯ ФУНКЦИЯ ---
 def get_smart_response(user_id, text, pet):
     text_lower = text.lower().strip()
     sound = random.choice(animal_sounds.get(pet.get('pet_type', 'кошка'), ["мяу"]))
     pet_info = get_pet_info(pet)
 
-    # 1. Поиск по паттернам
+    if text_lower in response_cache:
+        return response_cache[text_lower]
+
     for pattern, responses in dialog_patterns.items():
         if re.search(pattern, text_lower):
             response = random.choice(responses)
             for key, value in pet_info.items():
                 response = response.replace("{" + key + "}", str(value))
             response = response.replace("{sound}", sound)
+            response_cache[text_lower] = response
             return response
 
-    # 2. Поиск похожего сообщения в базе
-    best_category = find_best_match(text_lower)
-    if best_category and best_category in dialog_dataset:
-        responses = dialog_dataset[best_category].get("responses", [])
-        if responses:
-            response = random.choice(responses)
-            for key, value in pet_info.items():
-                response = response.replace("{" + key + "}", str(value))
-            response = response.replace("{sound}", sound)
-            return response
+    if dialog_dataset:
+        best_category = find_best_match(text_lower, dialog_dataset)
+        if best_category and best_category in dialog_dataset:
+            responses = dialog_dataset[best_category].get("responses", [])
+            if responses:
+                response = random.choice(responses)
+                for key, value in pet_info.items():
+                    response = response.replace("{" + key + "}", str(value))
+                response = response.replace("{sound}", sound)
+                response_cache[text_lower] = response
+                return response
 
-    # 3. Используем историю
     history = get_chat_history(user_id, limit=6)
     if history:
         last_msgs = [h['message'] for h in history if h['sender'] == 'user']
         if last_msgs:
             last = last_msgs[-1]
-            return random.choice([
+            response = random.choice([
                 f"{sound} Я внимательно тебя слушаю. Ты говорил(а): «{last[:40]}». Расскажи ещё.",
                 f"Мне интересно, хозяин. {sound} Продолжай, пожалуйста.",
                 f"*внимательно смотрю на тебя* Расскажи подробнее."
             ])
+            response_cache[text_lower] = response
+            return response
 
-    # 4. Общие ответы
     generic = [
         f"*виляю хвостом* Мне нравится разговаривать с тобой, хозяин.",
         f"{sound} Я не совсем понял, но мне интересно. Расскажи подробнее.",
@@ -150,9 +149,11 @@ def get_smart_response(user_id, text, pet):
         f"{sound} А что ты сам думаешь по этому поводу?",
         f"Это звучит интересно. Расскажи ещё немного, хозяин."
     ]
-    return random.choice(generic)
+    response = random.choice(generic)
+    response_cache[text_lower] = response
+    return response
 
-# --- API (без изменений) ---
+# --- API ---
 @app.route('/api/history/<int:user_id>')
 def api_history(user_id):
     history = get_chat_history(user_id, limit=50)
