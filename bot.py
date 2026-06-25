@@ -1,21 +1,20 @@
 import os
 import random
 import threading
-import time
 from telebot import TeleBot
 from supabase import create_client
-from flask import Flask, request
+from flask import Flask
 
-# --- FLASK ДЛЯ ПОРТА (чтобы Render не ругался) ---
-app = Flask(__name__)
+# --- FLASK ДЛЯ ПОРТА ---
+flask_app = Flask(__name__)
 
-@app.route('/ping')
+@flask_app.route('/ping')
 def ping():
     return "I'm alive!", 200
 
 def run_flask():
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    flask_app.run(host='0.0.0.0', port=port)
 
 # --- SUPABASE ---
 SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
@@ -25,7 +24,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 TOKEN = "8961168833:AAEtlADb8Tyng1LmMbD7d_0Q7AeNkqny_W8"
 bot = TeleBot(TOKEN)
 
-# --- БАЗА ДАННЫХ ---
+# --- БАЗА ---
 def get_pet(user_id):
     response = supabase.table('pets').select('*').eq('user_id', user_id).execute()
     if response.data:
@@ -45,7 +44,37 @@ def save_message(user_id, sender, message):
 # --- КОМАНДЫ ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик. Напиши /newpet — завести питомца, /help — список команд.")
+    bot.send_message(
+        message.chat.id,
+        "🐾 Привет! Это Серийчик.\n\n"
+        "/newpet — завести питомца\n"
+        "/status — состояние питомца\n"
+        "/feed — покормить\n"
+        "/play — поиграть\n"
+        "/wash — помыть\n"
+        "/sleep — поспать\n"
+        "/train — тренировать\n"
+        "/dress — переодеть\n"
+        "/app — открыть мини-приложение\n"
+        "/help — этот список"
+    )
+
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    bot.send_message(
+        message.chat.id,
+        "📋 Команды:\n"
+        "/newpet — завести питомца\n"
+        "/status — состояние питомца\n"
+        "/feed — покормить\n"
+        "/play — поиграть\n"
+        "/wash — помыть\n"
+        "/sleep — поспать\n"
+        "/train — тренировать\n"
+        "/dress — переодеть\n"
+        "/app — открыть мини-приложение\n"
+        "/help — этот список"
+    )
 
 @bot.message_handler(commands=['newpet'])
 def new_pet(message):
@@ -98,12 +127,18 @@ def status(message):
     if not pet:
         bot.send_message(message.chat.id, "Нет питомца. /newpet")
         return
-    text = f"📊 {pet['pet_type']} {pet['pet_name']}\nСтадия: {pet['stage']}\nВозраст: {pet['age']}\nГолод: {pet['голод']}\nСчастье: {pet['счастье']}\nГигиена: {pet['гигиена']}\nЭнергия: {pet['энергия']}\nДисциплина: {pet['дисциплина']}\nСообщений: {pet['total_messages']}"
+    text = (
+        f"📊 {pet['pet_type']} {pet['pet_name']}\n"
+        f"Стадия: {pet['stage']}\n"
+        f"Возраст: {pet['age']}\n"
+        f"Голод: {pet['голод']}\n"
+        f"Счастье: {pet['счастье']}\n"
+        f"Гигиена: {pet['гигиена']}\n"
+        f"Энергия: {pet['энергия']}\n"
+        f"Дисциплина: {pet['дисциплина']}\n"
+        f"Сообщений: {pet['total_messages']}"
+    )
     bot.send_message(message.chat.id, text)
-
-@bot.message_handler(commands=['help'])
-def help_command(message):
-    bot.send_message(message.chat.id, "📋 Команды:\n/newpet — завести питомца\n/status — состояние питомца\n/feed — покормить\n/play — поиграть\n/wash — помыть\n/sleep — поспать\n/train — тренировать\n/dress — переодеть\n/app — открыть мини-приложение\n/help — этот список")
 
 @bot.message_handler(commands=['feed'])
 def feed(message):
@@ -185,7 +220,7 @@ def app_command(message):
     ))
     bot.send_message(message.chat.id, "Нажми на кнопку, чтобы открыть питомца:", reply_markup=markup)
 
-# --- ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ ---
+# --- ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ (без диалогов) ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -199,15 +234,11 @@ def handle_all_messages(message):
     save_message(user_id, 'user', message.text)
     bot.send_message(message.chat.id, "🐾 Я тебя слышу!")
 
-# --- ЗАПУСК ПОРТА И БОТА ---
+# --- ЗАПУСК ---
 if __name__ == '__main__':
-    # Удаляем вебхук (если был)
     bot.delete_webhook()
-    
-    # Запускаем Flask в отдельном потоке (чтобы открыть порт)
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
-    
-    print("✅ Бот запущен (с портом)!")
+    print("✅ Бот запущен (все команды есть, диалогов нет)!")
     bot.polling()
