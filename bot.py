@@ -39,6 +39,7 @@ def create_pet(user_id, pet_type):
     supabase.table('pets').insert({
         'user_id': user_id,
         'pet_type': pet_type,
+        'pet_name': 'Серийчик',
         'stage': 'в пути 🌱',
         'age': 1,
         'total_messages': 0,
@@ -105,7 +106,7 @@ pet_emojis = {
 # --- КОМАНДЫ ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик.\n/newpet — завести питомца\n/feed, /play, /wash, /sleep, /train — ухаживать\n/status — состояние\n/dress — переодеть\n/app — открыть питомца в мини-приложении")
+    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик.\n/newpet — завести питомца\n/name — дать имя питомцу\n/feed, /play, /wash, /sleep, /train — ухаживать\n/status — состояние\n/dress — переодеть\n/app — открыть питомца в мини-приложении")
 
 @bot.message_handler(commands=['newpet'])
 def new_pet(message):
@@ -132,6 +133,27 @@ def set_pet_type(message):
     create_pet(user_id, pet_type)
     user_choice.pop(user_id, None)
     bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Чтобы он вылупился, нужно 100 сообщений.")
+
+# --- НОВАЯ КОМАНДА: ИМЯ ПИТОМЦА ---
+@bot.message_handler(commands=['name'])
+def set_name(message):
+    user_id = message.from_user.id
+    pet = get_pet(user_id)
+    if not pet:
+        bot.send_message(message.chat.id, "Сначала заведи питомца через /newpet")
+        return
+    bot.send_message(message.chat.id, "✏️ Напиши новое имя для своего питомца:")
+    bot.register_next_step_handler(message, save_name)
+
+def save_name(message):
+    user_id = message.from_user.id
+    name = message.text.strip()
+    if len(name) > 20:
+        bot.send_message(message.chat.id, "❌ Имя слишком длинное. Напиши короче (до 20 символов).")
+        bot.register_next_step_handler(message, save_name)
+        return
+    update_pet(user_id, 'pet_name', name)
+    bot.send_message(message.chat.id, f"✅ Отлично! Теперь твоего питомца зовут {name}!")
 
 @bot.message_handler(commands=['feed'])
 def feed(message):
@@ -263,5 +285,5 @@ thread.start()
 
 # --- ЗАПУСК ---
 threading.Thread(target=run_server).start()
-print("✅ Бот с Supabase и Mini App запущен!")
+print("✅ Бот с именем и чатом запущен!")
 bot.polling()
