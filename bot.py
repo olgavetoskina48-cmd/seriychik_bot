@@ -4,6 +4,18 @@ import threading
 import time
 from telebot import TeleBot
 from supabase import create_client
+from flask import Flask, request
+
+# --- FLASK ДЛЯ ПОРТА (чтобы Render не ругался) ---
+app = Flask(__name__)
+
+@app.route('/ping')
+def ping():
+    return "I'm alive!", 200
+
+def run_flask():
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
 
 # --- SUPABASE ---
 SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
@@ -173,7 +185,7 @@ def app_command(message):
     ))
     bot.send_message(message.chat.id, "Нажми на кнопку, чтобы открыть питомца:", reply_markup=markup)
 
-# --- ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ (без диалогов) ---
+# --- ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -182,16 +194,20 @@ def handle_all_messages(message):
     pet = get_pet(user_id)
     if not pet:
         return
-    # Увеличиваем счётчик сообщений
     new_total = pet['total_messages'] + 1
     update_pet(user_id, 'total_messages', new_total)
-    # Сохраняем сообщение в историю (на будущее)
     save_message(user_id, 'user', message.text)
-    # Отправляем короткий ответ без диалога
     bot.send_message(message.chat.id, "🐾 Я тебя слышу!")
 
-# --- ЗАПУСК ---
+# --- ЗАПУСК ПОРТА И БОТА ---
 if __name__ == '__main__':
-    bot.delete_webhook()  # На всякий случай удаляем вебхук
-    print("✅ Бот запущен (без диалогов)!")
+    # Удаляем вебхук (если был)
+    bot.delete_webhook()
+    
+    # Запускаем Flask в отдельном потоке (чтобы открыть порт)
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    print("✅ Бот запущен (с портом)!")
     bot.polling()
