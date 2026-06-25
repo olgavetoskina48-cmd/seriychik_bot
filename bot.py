@@ -1,48 +1,204 @@
-import telebot
-import threading
-import time
 import os
 import random
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import re
+import json
+from flask import Flask, request
+from telebot import TeleBot
 from supabase import create_client
+from difflib import SequenceMatcher
+import threading
+import time
 
-TOKEN = "8961168833:AAEtlADb8Tyng1LmMbD7d_0Q7AeNkqny_W8"
-bot = telebot.TeleBot(TOKEN)
-
-ADMINS = []
-user_choice = {}
+app = Flask(__name__)
 
 # --- SUPABASE ---
 SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
 SUPABASE_KEY = "sb_publishable_-kqOsr7gFZRi8ctCNPaLgg_4mjU-NZy"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-colors = ["красный", "синий", "зелёный", "жёлтый", "фиолетовый", "розовый", "оранжевый", "голубой"]
-times = ["утро", "день", "вечер", "ночь"]
-seasons = ["весна", "лето", "осень", "зима"]
-foods = ["рыбка", "сосиски", "мороженое", "печенье", "мясо"]
-toys = ["мячик", "косточка", "мышка", "верёвка", "подушка"]
+TOKEN = "8961168833:AAEtlADb8Tyng1LmMbD7d_0Q7AeNkqny_W8"
+bot = TeleBot(TOKEN)
 
-# --- ПОРТ ---
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'Bot is running!')
-
-def run_server():
-    port = int(os.environ.get('PORT', 10000))
-    server = HTTPServer(('0.0.0.0', port), Handler)
-    server.serve_forever()
-
-# --- БАЗА ---
+# --- БАЗА ДАННЫХ (Supabase) ---
 def get_pet(user_id):
     response = supabase.table('pets').select('*').eq('user_id', user_id).execute()
     if response.data:
         return response.data[0]
     return None
 
-def create_pet(user_id, pet_type):
+def update_pet(user_id, field, value):
+    supabase.table('pets').update({field: value}).eq('user_id', user_id).execute()
+
+def save_message(user_id, sender, message):
+    supabase.table('chat_history').insert({
+        'user_id': user_id,
+        'sender': sender,
+        'message': message
+    }).execute()
+
+def get_chat_history(user_id, limit=6):
+    response = supabase.table('chat_history')\
+        .select('*')\
+        .eq('user_id', user_id)\
+        .order('created_at', desc=False)\
+        .limit(limit)\
+        .execute()
+    return response.data if response.data else []
+
+# --- ЗВУКИ ---
+animal_sounds = {
+    "кошка": ["мяу", "мур", "мяф", "фыр"],
+    "собака": ["гав", "тяф", "вуф", "ррр"],
+    "лиса": ["фыр", "кхе", "ууу", "шшш"],
+    "енот": ["хрум", "шурх", "фырк", "пиу"],
+    "хомяк": ["пиу", "цок", "чив", "фрр"]
+}
+
+# --- ДАННЫЕ О ПИТОМЦЕ ---
+def get_pet_info(pet):
+    return {
+        "pet_name": pet.get('pet_name', 'Серийчик'),
+        "pet_type": pet.get('pet_type', 'животное'),
+        "age": pet.get('age', 1),
+        "fav_color": pet.get('fav_color', 'все цвета'),
+        "fav_food": pet.get('fav_food', 'вкусняшки'),
+        "fav_toy": pet.get('fav_toy', 'мячик'),
+        "fav_time": pet.get('fav_time', 'все времена'),
+        "fav_season": pet.get('fav_season', 'все сезоны')
+    }
+
+# --- КЕШ ДЛЯ ОТВЕТОВ ---
+response_cache = {}
+
+# --- ПОИСК ПОХОЖИХ СООБЩЕНИЙ ---
+def similarity(a, b):
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+def find_best_match(text, dialog_dataset):
+    best_score = 0
+    best_key = None
+    for category_name, category_data in dialog_dataset.items():
+        if "keywords" in category_data:
+            for keyword in category_data["keywords"]:
+                score = similarity(text, keyword)
+                if score > best_score:
+                    best_score = score
+                    best_key = category_name
+    if best_score > 0.65:
+        return best_key
+    return None
+
+# --- ЗАГРУЗКА ДИАЛОГОВ ---
+def load_dialogs():
+    try:
+        with open('dialogs.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {}
+
+dialog_dataset = load_dialogs()
+
+# --- ПАТТЕРНЫ ДЛЯ БЫСТРЫХ ОТВЕТОВ ---
+dialog_patterns = {
+    r'(плохо|грустно|больно|обидно|ужасно|тяжело|слёзы|плачу|депрессия|одинок|одиноко|нет сил|вымотан|всё надоело)': [
+        "Мне жаль это слышать, {sound}... Ты не один(на). Напиши своему админу в боте, он поможет.",
+        "Я рядом, хозяин! {sound} Расскажи, что случилось. *прижимаюсь к тебе*",
+        "Не грусти, хозяин! {sound} Я с тобой! *кладю голову тебе на колени*"
+    ],
+    r'(всё хорошо|всё отлично|супер|классно|замечательно|нормально|отлично|прекрасно)': [
+        "Я рад, что у тебя всё хорошо! {sound}",
+        "Ура! {sound} Отличные новости!",
+        "Здорово! {sound} Пусть так будет всегда!"
+    ]
+}
+
+# --- ОСНОВНАЯ ФУНКЦИЯ ---
+def get_smart_response(user_id, text, pet):
+    text_lower = text.lower().strip()
+    sound = random.choice(animal_sounds.get(pet.get('pet_type', 'кошка'), ["мяу"]))
+    pet_info = get_pet_info(pet)
+
+    # Проверяем кеш
+    if text_lower in response_cache:
+        return response_cache[text_lower]
+
+    # 1. Паттерны
+    for pattern, responses in dialog_patterns.items():
+        if re.search(pattern, text_lower):
+            response = random.choice(responses)
+            for key, value in pet_info.items():
+                response = response.replace("{" + key + "}", str(value))
+            response = response.replace("{sound}", sound)
+            response_cache[text_lower] = response
+            return response
+
+    # 2. Похожие сообщения
+    if dialog_dataset:
+        best_category = find_best_match(text_lower, dialog_dataset)
+        if best_category and best_category in dialog_dataset:
+            responses = dialog_dataset[best_category].get("responses", [])
+            if responses:
+                response = random.choice(responses)
+                for key, value in pet_info.items():
+                    response = response.replace("{" + key + "}", str(value))
+                response = response.replace("{sound}", sound)
+                response_cache[text_lower] = response
+                return response
+
+    # 3. История
+    history = get_chat_history(user_id, limit=6)
+    if history:
+        last_msgs = [h['message'] for h in history if h['sender'] == 'user']
+        if last_msgs:
+            last = last_msgs[-1]
+            response = random.choice([
+                f"{sound} Я внимательно тебя слушаю. Ты говорил(а): «{last[:40]}». Расскажи ещё.",
+                f"Мне интересно, хозяин. {sound} Продолжай, пожалуйста.",
+                f"*внимательно смотрю на тебя* Расскажи подробнее."
+            ])
+            response_cache[text_lower] = response
+            return response
+
+    # 4. Общие ответы
+    generic = [
+        f"*виляю хвостом* Мне нравится разговаривать с тобой, хозяин.",
+        f"{sound} Я не совсем понял, но мне интересно. Расскажи подробнее.",
+        f"Продолжай, хозяин. Я тебя внимательно слушаю. {sound}",
+        f"*прижимаюсь к тебе* Мне всегда интересно, что ты рассказываешь.",
+        f"{sound} А что ты сам думаешь по этому поводу?",
+        f"Это звучит интересно. Расскажи ещё немного, хозяин."
+    ]
+    response = random.choice(generic)
+    response_cache[text_lower] = response
+    return response
+
+# --- КОМАНДЫ БОТА ---
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик. Напиши /newpet — завести питомца, /help — список команд, /app — открыть мини-приложение.")
+
+@bot.message_handler(commands=['newpet'])
+def new_pet(message):
+    user_id = message.from_user.id
+    if get_pet(user_id):
+        bot.send_message(message.chat.id, "У тебя уже есть питомец!")
+        return
+    bot.send_message(message.chat.id, "🥚 Напиши тип питомца: кошка, лиса, собака, енот, хомяк")
+    bot.register_next_step_handler(message, set_pet_type)
+
+def set_pet_type(message):
+    user_id = message.from_user.id
+    pet_type = message.text.lower()
+    pet_emojis = {"кошка": "🐱", "лиса": "🦊", "собака": "🐶", "енот": "🦝", "хомяк": "🐹"}
+    if pet_type not in pet_emojis:
+        bot.send_message(message.chat.id, "❌ Неверный тип. Напиши: кошка, лиса, собака, енот, хомяк")
+        bot.register_next_step_handler(message, set_pet_type)
+        return
+    colors = ["красный", "синий", "зелёный", "жёлтый", "фиолетовый", "розовый", "оранжевый", "голубой"]
+    times = ["утро", "день", "вечер", "ночь"]
+    seasons = ["весна", "лето", "осень", "зима"]
+    foods = ["рыбка", "сосиски", "мороженое", "печенье", "мясо"]
+    toys = ["мячик", "косточка", "мышка", "верёвка", "подушка"]
     supabase.table('pets').insert({
         'user_id': user_id,
         'pet_type': pet_type,
@@ -63,108 +219,21 @@ def create_pet(user_id, pet_type):
         'fav_food': random.choice(foods),
         'fav_toy': random.choice(toys)
     }).execute()
-
-def update_pet(user_id, field, value):
-    supabase.table('pets').update({field: value}).eq('user_id', user_id).execute()
-
-def get_stage(total_messages):
-    if total_messages < 100:
-        return "в пути 🌱"
-    elif total_messages <= 250:
-        return "яйцо 🥚"
-    elif total_messages <= 500:
-        return "малыш 🐣"
-    elif total_messages <= 1000:
-        return "подросток 🧒"
-    else:
-        return "взрослый 🧑"
-
-def get_age(total_messages):
-    return total_messages // 100 + 1
-
-def check_stage_upgrade(user_id, pet):
-    old_stage = pet['stage']
-    new_stage = get_stage(pet['total_messages'])
-    new_age = get_age(pet['total_messages'])
-    if new_stage != old_stage:
-        update_pet(user_id, 'stage', new_stage)
-        if new_stage != "в пути 🌱":
-            bot.send_message(user_id, f"🌟 Твой Серийчик вырос до {new_stage}!")
-    if new_age != pet['age']:
-        update_pet(user_id, 'age', new_age)
-        bot.send_message(user_id, f"🎂 Твой Серийчик стал старше! Ему {new_age} возраст!")
-
-def get_state(pet):
-    if pet['голод'] < 20:
-        return "голодный 🍂"
-    if pet['гигиена'] < 20:
-        return "грязный 💧"
-    if pet['энергия'] < 20:
-        return "уставший 😴"
-    if pet['счастье'] < 20:
-        return "грустный 🌧️"
-    if pet['голод'] > 80 and pet['счастье'] > 80 and pet['гигиена'] > 80 and pet['энергия'] > 80:
-        return "счастливый 🌟"
-    return "спокойный 🙂"
-
-pet_emojis = {
-    "кошка": "🐱",
-    "лиса": "🦊",
-    "собака": "🐶",
-    "енот": "🦝",
-    "хомяк": "🐹"
-}
-
-# --- КОМАНДЫ ---
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "🐾 Привет! Это Серийчик.\n/newpet — завести питомца\n/name — дать имя питомцу\n/feed, /play, /wash, /sleep, /train — ухаживать\n/status — состояние\n/dress — переодеть\n/app — открыть питомца в мини-приложении")
-
-@bot.message_handler(commands=['newpet'])
-def new_pet(message):
-    user_id = message.from_user.id
-    if get_pet(user_id):
-        bot.send_message(message.chat.id, "У тебя уже есть питомец!")
-        return
-    user_choice[user_id] = True
-    bot.send_message(message.chat.id, "🥚 Напиши тип питомца: кошка, лиса, собака, енот, хомяк")
-    bot.register_next_step_handler(message, set_pet_type)
-
-def set_pet_type(message):
-    user_id = message.from_user.id
-    if user_id not in user_choice:
-        return
-    if message.text.startswith('/'):
-        user_choice.pop(user_id, None)
-        return
-    pet_type = message.text.lower()
-    if pet_type not in pet_emojis:
-        bot.send_message(message.chat.id, "❌ Неверный тип. Напиши: кошка, лиса, собака, енот, хомяк")
-        bot.register_next_step_handler(message, set_pet_type)
-        return
-    create_pet(user_id, pet_type)
-    user_choice.pop(user_id, None)
     bot.send_message(message.chat.id, f"✅ Ты выбрал {pet_emojis[pet_type]} {pet_type.capitalize()}! Чтобы он вылупился, нужно 100 сообщений.")
 
-@bot.message_handler(commands=['name'])
-def set_name(message):
+@bot.message_handler(commands=['status'])
+def status(message):
     user_id = message.from_user.id
     pet = get_pet(user_id)
     if not pet:
-        bot.send_message(message.chat.id, "Сначала заведи питомца через /newpet")
+        bot.send_message(message.chat.id, "Нет питомца. /newpet")
         return
-    bot.send_message(message.chat.id, "✏️ Напиши новое имя для своего питомца:")
-    bot.register_next_step_handler(message, save_name)
+    text = f"📊 {pet['pet_type']} {pet['pet_name']}\nСтадия: {pet['stage']}\nВозраст: {pet['age']}\nГолод: {pet['голод']}\nСчастье: {pet['счастье']}\nГигиена: {pet['гигиена']}\nЭнергия: {pet['энергия']}\nДисциплина: {pet['дисциплина']}\nСообщений: {pet['total_messages']}"
+    bot.send_message(message.chat.id, text)
 
-def save_name(message):
-    user_id = message.from_user.id
-    name = message.text.strip()
-    if len(name) > 20:
-        bot.send_message(message.chat.id, "❌ Имя слишком длинное. Напиши короче (до 20 символов).")
-        bot.register_next_step_handler(message, save_name)
-        return
-    update_pet(user_id, 'pet_name', name)
-    bot.send_message(message.chat.id, f"✅ Отлично! Теперь твоего питомца зовут {name}!")
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    bot.send_message(message.chat.id, "📋 Команды:\n/newpet — завести питомца\n/status — состояние питомца\n/feed — покормить\n/play — поиграть\n/wash — помыть\n/sleep — поспать\n/train — тренировать\n/dress — переодеть\n/app — открыть мини-приложение\n/help — этот список")
 
 @bot.message_handler(commands=['feed'])
 def feed(message):
@@ -223,18 +292,6 @@ def train(message):
     update_pet(user_id, 'дисциплина', new_val)
     bot.send_message(message.chat.id, "🏋️ Тренировка! Дисциплина +15")
 
-@bot.message_handler(commands=['status'])
-def status(message):
-    user_id = message.from_user.id
-    pet = get_pet(user_id)
-    if not pet:
-        bot.send_message(message.chat.id, "Нет питомца. /newpet")
-        return
-    state = get_state(pet)
-    emoji = pet_emojis.get(pet['pet_type'], '🐾')
-    text = f"📊 {emoji} Серийчик ({state})\n{pet['stage']}\nВозраст: {pet['age']}\n\n🍖 Голод: {pet['голод']}\n😊 Счастье: {pet['счастье']}\n🧼 Гигиена: {pet['гигиена']}\n⚡ Энергия: {pet['энергия']}\n📏 Дисциплина: {pet['дисциплина']}\n📅 Дней: {pet['дни']}\n👕 Одежда: {pet['одежда']}\n💬 Сообщений: {pet['total_messages']}"
-    bot.send_message(message.chat.id, text)
-
 @bot.message_handler(commands=['dress'])
 def dress(message):
     user_id = message.from_user.id
@@ -256,44 +313,41 @@ def app_command(message):
         text="🐾 Открыть Серийчика",
         web_app=telebot.types.WebAppInfo(url="https://seriychik-webapp.onrender.com")
     ))
-    bot.send_message(message.chat.id, "Нажми на кнопку, чтобы открыть питомца в отдельном окне:", reply_markup=markup)
+    bot.send_message(message.chat.id, "Нажми на кнопку, чтобы открыть питомца:", reply_markup=markup)
 
-# --- СООБЩЕНИЯ ---
+# --- ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
     if message.text and message.text.startswith('/'):
         return
-    if user_id in user_choice:
-        return
     pet = get_pet(user_id)
     if not pet:
         return
+    # Обновляем счётчик сообщений
     new_total = pet['total_messages'] + 1
     update_pet(user_id, 'total_messages', new_total)
-    check_stage_upgrade(user_id, pet)
+    # Сохраняем сообщение
+    save_message(user_id, 'user', message.text)
+    # Генерируем ответ
+    response = get_smart_response(user_id, message.text, pet)
+    save_message(user_id, 'pet', response)
+    bot.send_message(message.chat.id, response)
 
-# --- ДНИ ---
-def update_days():
-    while True:
-        time.sleep(86400)
-        pets = supabase.table('pets').select('user_id', 'голод', 'счастье', 'гигиена', 'энергия', 'дисциплина', 'дни').execute()
-        for p in pets.data:
-            new_data = {
-                'дни': p['дни'] + 1,
-                'голод': max(0, p['голод'] - 5),
-                'счастье': max(0, p['счастье'] - 3),
-                'гигиена': max(0, p['гигиена'] - 5),
-                'энергия': max(0, p['энергия'] - 4),
-                'дисциплина': max(0, p['дисциплина'] - 2)
-            }
-            supabase.table('pets').update(new_data).eq('user_id', p['user_id']).execute()
+# --- WEBHOOK ---
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update = request.get_json()
+    if update:
+        bot.process_new_updates([update])
+    return "OK", 200
 
-thread = threading.Thread(target=update_days)
-thread.daemon = True
-thread.start()
+@app.route('/ping', methods=['GET'])
+def ping():
+    return "I'm alive!", 200
 
-# --- ЗАПУСК ---
-threading.Thread(target=run_server).start()
-print("✅ Бот с памятью и умным чатом запущен!")
-bot.polling()
+if __name__ == '__main__':
+    # Устанавливаем вебхук
+    bot.set_webhook(url='https://seriychik-bot.onrender.com/webhook')
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
