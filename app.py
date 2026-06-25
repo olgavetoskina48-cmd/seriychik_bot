@@ -11,8 +11,9 @@ SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
 SUPABASE_KEY = "sb_publishable_-kqOsr7gFZRi8ctCNPaLgg_4mjU-NZy"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- HUGGING FACE (бесплатно, без ключа) ---
-HF_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
+# --- OPENROUTER ---
+OPENROUTER_API_KEY = "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"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 def get_pet(user_id):
     response = supabase.table('pets').select('*').eq('user_id', user_id).execute()
@@ -52,24 +53,46 @@ def ask_ai(user_text, pet):
     pet_name = pet.get('pet_name', 'Серийчик')
     sound = animal_sounds.get(pet_type, "мяу")
 
-    # Берём историю
     history = get_chat_history(pet['user_id'], limit=6)
     history_text = ""
     for msg in history:
         sender = "Пользователь" if msg['sender'] == 'user' else pet_name
         history_text += f"{sender}: {msg['message']}\n"
 
-    # Формируем запрос для Hugging Face
-    prompt = f"{history_text}\nПользователь: {user_text}\n{pet_name}:"
+    prompt = f"""Ты — {pet_type} по имени {pet_name}. Ты живое животное, которое умеет разговаривать.
+Ты общаешься с человеком, поддерживаешь диалог, отвечаешь по смыслу.
+Отвечай коротко (1-3 предложения). Иногда добавляй звук "{sound}" в начале или конце.
+Используй эмодзи, но не перебарщивай. Будь добрым, заботливым, иногда забавным.
+Если человеку плохо — посоветуй обратиться к админу.
+Если спрашивают про твои предпочтения — отвечай честно.
+Никогда не используй заготовленные фразы. Всегда отвечай по-новому.
+
+История диалога:
+{history_text}
+
+Сейчас пользователь сказал: "{user_text}"
+Твой ответ:"""
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "openai/gpt-3.5-turbo",
+        "messages": [
+            {"role": "system", "content": "Ты — дружелюбный питомец."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 80,
+        "temperature": 0.8
+    }
 
     try:
-        response = requests.post(HF_URL, json={"inputs": prompt, "parameters": {"max_length": 60, "temperature": 0.8}})
+        response = requests.post(OPENROUTER_URL, headers=headers, json=payload)
         if response.status_code == 200:
             result = response.json()
-            ai_response = result[0]['generated_text'].strip()
-            # Убираем лишние части (иногда модель повторяет историю)
-            if ai_response.startswith(prompt):
-                ai_response = ai_response[len(prompt):].strip()
+            ai_response = result['choices'][0]['message']['content'].strip()
             # Добавляем звук, если его нет
             if sound not in ai_response.lower():
                 if random.random() < 0.5:
@@ -78,9 +101,10 @@ def ask_ai(user_text, pet):
                     ai_response = f"{ai_response} {sound}!"
             return ai_response
         else:
-            return f"Ошибка HF: {response.status_code}. {sound}! Попробуй ещё раз."
-    except Exception as e:
-        return f"Ошибка: {e}. {sound}! Попробуй позже."
+            # Если ошибка — возвращаем осмысленную фразу-заглушку
+            return f"Я тебя слышу, но сейчас не могу ответить. {sound}!"
+    except Exception:
+        return f"Ошибка соединения. {sound}! Попробуй позже."
 
 # --- API ---
 @app.route('/api/history/<int:user_id>')
