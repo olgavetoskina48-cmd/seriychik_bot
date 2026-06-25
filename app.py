@@ -27,7 +27,7 @@ def save_message(user_id, sender, message):
         'message': message
     }).execute()
 
-def get_chat_history(user_id, limit=5):
+def get_chat_history(user_id, limit=3):
     response = supabase.table('chat_history')\
         .select('*')\
         .eq('user_id', user_id)\
@@ -44,19 +44,25 @@ animal_sounds = {
     "хомяк": ["пиу", "цок", "чив", "фрр"]
 }
 
-# --- ОТВЕТЧИК С КОНТЕКСТОМ ---
+# --- ПОЛНЫЙ ДИАЛОГОВЫЙ ДВИЖОК ---
 def get_smart_response(user_id, text, pet):
     sound = random.choice(animal_sounds.get(pet.get('pet_type', 'кошка'), ["мяу"]))
     text_lower = text.lower()
 
-    # Загружаем историю (последние 5 сообщений)
-    history = get_chat_history(user_id, limit=5)
-    history_text = ""
-    for msg in history:
-        sender = "Пользователь" if msg['sender'] == 'user' else "Питомец"
-        history_text += f"{sender}: {msg['message']}\n"
+    # Загружаем последние 3 сообщения
+    history = get_chat_history(user_id, limit=3)
+    last_user_msg = ""
+    last_pet_msg = ""
+    if len(history) >= 1:
+        last_user_msg = history[-1]['message'] if history[-1]['sender'] == 'user' else ""
+    if len(history) >= 2:
+        last_pet_msg = history[-2]['message'] if history[-2]['sender'] == 'pet' else ""
 
-    # --- 1. ПРИВЕТСТВИЯ ---
+    # --- 1. НЕГАТИВ (всегда в приоритете) ---
+    if re.search(r'плохо|грустно|больно|обидно|ужасно|тяжело|слёзы|плачу|депрессия|одинок|одиноко|нет сил|вымотан', text_lower):
+        return f"Мне жаль это слышать, {sound}... Ты не один(на). Напиши своему админу в боте, он поможет."
+
+    # --- 2. ПРИВЕТСТВИЯ ---
     if re.search(r'привет|здравствуй|хай|hello|салют|ку', text_lower):
         return random.choice([
             f"Привет-привет! {sound} Как жизнь?",
@@ -65,7 +71,7 @@ def get_smart_response(user_id, text, pet):
             f"Хай, {sound}! Как ты сегодня?"
         ])
 
-    # --- 2. КАК ДЕЛА ---
+    # --- 3. КАК ДЕЛА ---
     if re.search(r'как дел|как сам|как жизнь|как ты|как настроение', text_lower):
         return random.choice([
             f"У меня всё супер! {sound} А у тебя?",
@@ -74,7 +80,7 @@ def get_smart_response(user_id, text, pet):
             f"Всё замечательно! {sound} Особенно теперь, когда ты рядом!"
         ])
 
-    # --- 3. ЧТО ДЕЛАЕШЬ ---
+    # --- 4. ЧТО ДЕЛАЕШЬ ---
     if re.search(r'что делаешь|чем занят|чем занимаешься|что делаешь сейчас', text_lower):
         return random.choice([
             f"Смотрю в окошко, {sound}... там птичка!",
@@ -84,24 +90,20 @@ def get_smart_response(user_id, text, pet):
             f"Жду тебя, {sound}! А то скучно одному(ой)."
         ])
 
-    # --- 4. ЧЕМ УВЛЕКАЕШЬСЯ / ХОББИ ---
+    # --- 5. ХОББИ / УВЛЕЧЕНИЯ ---
     if re.search(r'увлекаешься|хобби|чем любишь заниматься|твоё хобби', text_lower):
         return random.choice([
-            f"Я люблю играть, спать и есть, {sound}! А ты?",
-            f"Моё хобби — наблюдать за птицами, {sound}! Они такие смешные.",
-            f"Я люблю лежать на солнышке и мечтать, {sound}! А у тебя есть хобби?"
+            f"Я люблю играть, спать и есть, {sound}! А ты что любишь?",
+            f"Моё хобби — наблюдать за птицами, {sound}! Они такие смешные. А у тебя?",
+            f"Я люблю лежать на солнышке и мечтать, {sound}! А ты чем увлекаешься?"
         ])
 
-    # --- 5. НЕГАТИВ ---
-    if re.search(r'плохо|грустно|больно|обидно|ужасно|тяжело|слёзы|плачу|депрессия|одинок|одиноко|нет сил|вымотан', text_lower):
-        return f"Мне жаль это слышать, {sound}... Ты не один(на). Напиши своему админу в боте, он поможет."
-
-    # --- 6. ВСЁ ХОРОШО ---
-    if re.search(r'всё хорошо|всё отлично|супер|классно|замечательно|нормально|отлично', text_lower):
+    # --- 6. ЛЮБОВЬ / СКУЧАЛ ---
+    if re.search(r'люблю|скучал|соскучился|ты мой любимый|любит', text_lower):
         return random.choice([
-            f"Я рад, что у тебя всё хорошо! {sound}",
-            f"Ура! {sound} Отличные новости!",
-            f"Здорово! {sound} Пусть так будет всегда!"
+            f"Я тоже тебя очень люблю! {sound} Ты мой самый лучший друг!",
+            f"Конечно, скучал(а)! {sound} Ты долго не появлялся(лась)!",
+            f"Я тебя обожаю! {sound} Ты у меня самый лучший!"
         ])
 
     # --- 7. ЛЮБИМЫЙ ЦВЕТ ПИТОМЦА ---
@@ -109,53 +111,48 @@ def get_smart_response(user_id, text, pet):
         if pet.get('fav_color') and pet['fav_color'] != 'None':
             return f"Мой любимый цвет — {pet['fav_color']}! {sound} А у тебя?"
         else:
-            return f"Я люблю все цвета, {sound}! А ты?"
+            return f"Я люблю все цвета, {sound}! А у тебя есть любимый?"
 
     # --- 8. ЛЮБИМАЯ ЕДА ---
     if re.search(r'твоя любимая еда|что любишь есть|еда', text_lower):
         if pet.get('fav_food') and pet['fav_food'] != 'None':
-            return f"Обожаю {pet['fav_food']}! {sound} А у тебя?"
+            return f"Обожаю {pet['fav_food']}! {sound} А ты что любишь?"
         else:
-            return f"Я люблю всё вкусное, {sound}! А ты?"
+            return f"Я люблю всё вкусное, {sound}! А ты что любишь?"
 
     # --- 9. ЛЮБИМАЯ ИГРУШКА ---
-    if re.search(r'твоя любимая игрушка|во что любишь играть', text_lower):
+    if re.search(r'любимая игрушка|во что любишь играть', text_lower):
         if pet.get('fav_toy') and pet['fav_toy'] != 'None':
-            return f"Моя любимая игрушка — {pet['fav_toy']}! {sound} Давай поиграем!"
+            return f"Моя любимая игрушка — {pet['fav_toy']}! {sound} А у тебя?"
         else:
-            return f"Я люблю играть в мячик, {sound}! А ты?"
+            return f"Я люблю играть в мячик, {sound}! А у тебя есть любимая игрушка?"
 
-    # --- 10. ЛЮБИМОЕ ВРЕМЯ СУТОК ---
-    if re.search(r'любимое время суток|какое время любишь|утро|день|вечер|ночь', text_lower):
-        if pet.get('fav_time') and pet['fav_time'] != 'None':
-            return f"Я больше всего люблю {pet['fav_time']}! {sound} А ты?"
+    # --- 10. ФИЛЬМЫ ---
+    if re.search(r'фильм|кино|сериал|фильмы|кинотеатр|классика|жанр', text_lower):
+        # Если пользователь сказал "Да" на вопрос о классике
+        if re.search(r'да|ага|угу|конечно|люблю', text_lower) and ('классик' in last_pet_msg or 'кино' in last_pet_msg):
+            return f"О, здорово! {sound} Я тоже люблю старые фильмы. Они такие душевные! А какой твой любимый фильм?"
+        # Если пользователь сказал "Нет" на вопрос о классике
+        elif re.search(r'нет|не|не люблю|не очень', text_lower) and ('классик' in last_pet_msg or 'кино' in last_pet_msg):
+            return f"А что ты любишь смотреть? {sound} Может, комедии или боевики?"
         else:
-            return f"Я люблю все времена суток, {sound}! А ты?"
+            return random.choice([
+                f"Обожаю фильмы, {sound}! Люблю комедии. А ты какой жанр любишь?",
+                f"Сериалы — это круто, {sound}! Что смотришь сейчас?",
+                f"Кино — это магия, {sound}! А ты любишь классику?",
+                f"Я недавно смотрел(а) один старый фильм, {sound}! А ты что посоветуешь?"
+            ])
 
-    # --- 11. ЛЮБИМОЕ ВРЕМЯ ГОДА ---
-    if re.search(r'любимое время года|какое время года любишь|весна|лето|осень|зима', text_lower):
-        if pet.get('fav_season') and pet['fav_season'] != 'None':
-            return f"Обожаю {pet['fav_season']}! {sound} А ты?"
-        else:
-            return f"Я люблю все сезоны, {sound}! А ты?"
-
-    # --- 12. ФИЛЬМЫ ---
-    if re.search(r'фильм|кино|сериал|фильмы|кинотеатр', text_lower):
-        return random.choice([
-            f"Обожаю фильмы, {sound}! Люблю комедии. А ты какой жанр любишь?",
-            f"Сериалы — это круто, {sound}! Что смотришь сейчас?",
-            f"Кино — это магия, {sound}! А ты любишь классику?"
-        ])
-
-    # --- 13. МУЗЫКА ---
-    if re.search(r'музыка|песня|песни|музыкальный|исполнитель', text_lower):
+    # --- 11. МУЗЫКА ---
+    if re.search(r'музыка|песня|песни|музыкальный|исполнитель|поёшь|слушаешь', text_lower):
         return random.choice([
             f"Музыка — это душа, {sound}! Что ты слушаешь?",
             f"Я люблю спокойную музыку, {sound}! А ты какую предпочитаешь?",
-            f"Музыка помогает расслабиться, {sound}! А у тебя есть любимый исполнитель?"
+            f"Музыка помогает расслабиться, {sound}! А у тебя есть любимый исполнитель?",
+            f"Я не умею петь, {sound}! А ты любишь петь?"
         ])
 
-    # --- 14. ЕДА ---
+    # --- 12. ЕДА ---
     if re.search(r'есть|кушать|еда|голод|кормить', text_lower):
         return random.choice([
             f"О! Еда! {sound} {sound} Я очень голоден(на)!",
@@ -164,7 +161,7 @@ def get_smart_response(user_id, text, pet):
             f"Покорми меня, {sound}! Я умираю с голоду!"
         ])
 
-    # --- 15. ИГРАТЬ ---
+    # --- 13. ИГРАТЬ ---
     if re.search(r'играть|игра|поиграй|поиграем|давай играть', text_lower):
         return random.choice([
             f"Давай! {sound}! Я люблю играть!",
@@ -173,15 +170,7 @@ def get_smart_response(user_id, text, pet):
             f"Играть — это моё любимое занятие, {sound}!"
         ])
 
-    # --- 16. ЛЮБОВЬ / СКУЧАЛ ---
-    if re.search(r'люблю|скучал|соскучился|ты мой любимый', text_lower):
-        return random.choice([
-            f"Я тоже тебя очень люблю! {sound}!",
-            f"Конечно, скучал(а)! {sound} Ты долго не появлялся(лась)!",
-            f"Я тебя обожаю! {sound} Ты у меня самый лучший!"
-        ])
-
-    # --- 17. ПОГОДА ---
+    # --- 14. ПОГОДА ---
     if re.search(r'погода|солнце|дождь|снег|ветер|облачно|тепло|холодно', text_lower):
         return random.choice([
             f"Сегодня отличная погода, {sound}! А ты как думаешь?",
@@ -190,18 +179,43 @@ def get_smart_response(user_id, text, pet):
             f"Снег идёт, {sound}! Холодно, но красиво."
         ])
 
+    # --- 15. ЛЮБИМОЕ ВРЕМЯ СУТОК ---
+    if re.search(r'любимое время суток|какое время любишь|утро|день|вечер|ночь', text_lower):
+        if pet.get('fav_time') and pet['fav_time'] != 'None':
+            return f"Я больше всего люблю {pet['fav_time']}! {sound} А ты?"
+        else:
+            return f"Я люблю все времена суток, {sound}! А ты?"
+
+    # --- 16. ЛЮБИМОЕ ВРЕМЯ ГОДА ---
+    if re.search(r'любимое время года|какое время года любишь|весна|лето|осень|зима', text_lower):
+        if pet.get('fav_season') and pet['fav_season'] != 'None':
+            return f"Обожаю {pet['fav_season']}! {sound} А ты?"
+        else:
+            return f"Я люблю все сезоны, {sound}! А ты?"
+
+    # --- 17. ПРОДОЛЖЕНИЕ ДИАЛОГА (если пользователь ответил на вопрос) ---
+    # Если пользователь сказал "Да" на вопрос о фильмах
+    if re.search(r'да|ага|угу|конечно|люблю', text_lower) and ('фильм' in last_pet_msg or 'кино' in last_pet_msg or 'сериал' in last_pet_msg):
+        return f"Класс! {sound} А какой фильм ты посоветуешь посмотреть?"
+
+    # Если пользователь сказал "Нет" на вопрос о фильмах
+    if re.search(r'нет|не|не люблю|не очень', text_lower) and ('фильм' in last_pet_msg or 'кино' in last_pet_msg or 'сериал' in last_pet_msg):
+        return f"А что ты тогда любишь делать в свободное время? {sound}"
+
+    # Если пользователь сказал "Да" на вопрос о любимом цвете
+    if re.search(r'да|ага|угу|конечно|люблю', text_lower) and ('цвет' in last_pet_msg):
+        return f"Здорово! {sound} А какой именно цвет тебе нравится?"
+
     # --- 18. ЕСЛИ НИЧЕГО НЕ ПОНЯЛ ---
-    # Проверяем, был ли у пользователя уже вопрос о том же
-    if history_text and len(history) > 0:
-        last_user_msg = history[-1]['message'] if history[-1]['sender'] == 'user' else None
-        if last_user_msg and len(last_user_msg) > 3:
-            return f"Хм, {sound}... ты говорил(а) о '{last_user_msg[:30]}...' Я слушаю тебя. Расскажи ещё!"
+    if len(history) >= 1 and last_user_msg and len(last_user_msg) > 3:
+        return f"Хм, {sound}... ты говорил(а) о '{last_user_msg[:40]}...' Я слушаю тебя. Расскажи ещё!"
 
     return random.choice([
         f"Я тебя слышу, {sound}... расскажи ещё!",
         f"Интересно, {sound}! А что ещё?",
         f"Хм, {sound}... давай поговорим о чём-то другом?",
-        f"Я тут, {sound}! Я всегда рад(а) поболтать."
+        f"Я тут, {sound}! Я всегда рад(а) поболтать.",
+        f"Расскажи мне что-нибудь, {sound}! Мне интересно."
     ])
 
 # --- API ---
