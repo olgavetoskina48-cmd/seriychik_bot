@@ -17,14 +17,13 @@ SUPABASE_URL = "https://jzscsndwuchzlellgqea.supabase.co"
 SUPABASE_KEY = "sb_publishable_-kqOsr7gFZRi8ctCNPaLgg_4mjU-NZy"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- СПИСОК ДЛЯ СЛУЧАЙНЫХ ПРЕДПОЧТЕНИЙ ---
 colors = ["красный", "синий", "зелёный", "жёлтый", "фиолетовый", "розовый", "оранжевый", "голубой"]
 times = ["утро", "день", "вечер", "ночь"]
 seasons = ["весна", "лето", "осень", "зима"]
 foods = ["рыбка", "сосиски", "мороженое", "печенье", "мясо"]
 toys = ["мячик", "косточка", "мышка", "верёвка", "подушка"]
 
-# --- ПОРТ ДЛЯ RENDER ---
+# --- ПОРТ ---
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -36,7 +35,7 @@ def run_server():
     server = HTTPServer(('0.0.0.0', port), Handler)
     server.serve_forever()
 
-# --- БАЗА ДАННЫХ (Supabase) ---
+# --- БАЗА ---
 def get_pet(user_id):
     response = supabase.table('pets').select('*').eq('user_id', user_id).execute()
     if response.data:
