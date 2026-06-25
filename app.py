@@ -214,4 +214,52 @@ def api_sleep(user_id):
         return jsonify({'error': 'Я не хочу спать! ⚡'}), 400
     new_val = min(100, pet['энергия'] + 30)
     update_pet(user_id, 'энергия', new_val)
-    return jsonify({'энергия': new_val, 'message': 'Поспал! +30'
+    return jsonify({'энергия': new_val, 'message': 'Поспал! +30'})
+
+@app.route('/api/train/<int:user_id>', methods=['POST'])
+def api_train(user_id):
+    pet = get_pet(user_id)
+    if not pet:
+        return jsonify({'error': 'Нет питомца'}), 404
+    if pet['дисциплина'] >= 100:
+        return jsonify({'error': 'Я уже дисциплинированный! 📏'}), 400
+    if pet['энергия'] < 10:
+        return jsonify({'error': 'Я устал для тренировки! 😴'}), 400
+    new_val = min(100, pet['дисциплина'] + 15)
+    update_pet(user_id, 'дисциплина', new_val)
+    return jsonify({'дисциплина': new_val, 'message': 'Тренировка! +15'})
+
+@app.route('/api/dress/<int:user_id>', methods=['POST'])
+def api_dress(user_id):
+    pet = get_pet(user_id)
+    if not pet:
+        return jsonify({'error': 'Нет питомца'}), 404
+    options = ["без одежды", "шапка 🧢", "шарф 🧣", "очки 🕶️", "плащ 🧥"]
+    current = pet['одежда']
+    idx = options.index(current) if current in options else 0
+    new_idx = (idx + 1) % len(options)
+    update_pet(user_id, 'одежда', options[new_idx])
+    return jsonify({'одежда': options[new_idx], 'message': f'Теперь: {options[new_idx]}'})
+
+@app.route('/api/chat/<int:user_id>', methods=['POST'])
+def api_chat(user_id):
+    pet = get_pet(user_id)
+    if not pet:
+        return jsonify({'error': 'Нет питомца'}), 404
+
+    data = request.get_json()
+    user_text = data.get('text', '')
+
+    save_message(user_id, 'user', user_text)
+    response = get_smart_response(user_id, user_text, pet)
+    save_message(user_id, 'pet', response)
+
+    return jsonify({'response': response})
+
+@app.route('/')
+def index():
+    return send_from_directory('webapp', 'index.html')
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
