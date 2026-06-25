@@ -87,7 +87,7 @@ def ask_ai(user_text, pet):
     }
 
     payload = {
-        "model": "mistralai/mistral-7b-instruct:free",
+        "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
         "messages": [
             {"role": "system", "content": "Ты — дружелюбный питомец."},
             {"role": "user", "content": prompt}
